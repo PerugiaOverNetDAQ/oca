@@ -158,10 +158,10 @@ void daqserver::SelectTrigger(uint32_t trig){
 
   trigtype = trig;
   
-  det[portdet.size()-1]->SelectTrigger(trigtype);
-  //for (int ii=0; ii<(int)(det.size()); ii++) {
-  //  det[ii]->SelectTrigger(trigtype);
-  //}
+  //det[portdet.size()-1]->SelectTrigger(trigtype);
+  for (int ii=0; ii<(int)(det.size()); ii++) {
+    det[ii]->SelectTrigger(trigtype);
+  }
 
   return;
 }
