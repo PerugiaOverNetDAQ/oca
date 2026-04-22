@@ -226,13 +226,9 @@ void fpgaDriver::intTriggerPeriod(uint32_t periodIn){
 
 void fpgaDriver::selectTrigger(uint32_t intTrigIn){
 	uint32_t regContent;
-  //Only for the trigger Board for the 2022 HERD TB at CERN
-	//ReadReg(rTRIGBUSY_LOGIC, &regContent);
-	//regContent = (regContent & 0xFFFFFFFE) | (intTrigIn & 0x00000001);
-	//SingleWriteReg(rTRIGBUSY_LOGIC, regContent);
-	ReadReg(rPKT_LEN, &regContent);
+	ReadReg(rTRIGBUSY_LOGIC, &regContent);
 	regContent = (regContent & 0xFFFFFFFE) | (intTrigIn & 0x00000001);
-	SingleWriteReg(rPKT_LEN, regContent);
+	SingleWriteReg(rTRIGBUSY_LOGIC, regContent);
 }
 
 void fpgaDriver::configureTestUnit(uint32_t tuCfg){

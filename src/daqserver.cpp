@@ -158,10 +158,11 @@ void daqserver::SelectTrigger(uint32_t trig){
 
   trigtype = trig;
   
-  det[portdet.size()-1]->SelectTrigger(trigtype);
-  //for (int ii=0; ii<(int)(det.size()); ii++) {
-  //  det[ii]->SelectTrigger(trigtype);
-  //}
+  //Only select trigger type in the Patch-Panel DE10 (assuming it is the last one)
+  //det[portdet.size()-1]->SelectTrigger(trigtype);
+  for (int ii=0; ii<(int)(det.size()); ii++) {
+    det[ii]->SelectTrigger(trigtype);
+  }
 
   return;
 }

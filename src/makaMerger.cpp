@@ -275,7 +275,7 @@ int makaMerger::collector(FILE* _dataFile){
           uint32_t i2cWord = evt[6];
           bool i2cType = i2cWord & 0x1;
           //printf("%s) I2C word: %08x - Trigger Type: %d\n", __METHOD_NAME__, i2cWord, i2cType);
-
+          //@todo is it updated by the FPGA, withouth I2C trigger?
           kNEvtsCal += !i2cType;
           kNEvtsBeam += i2cType;
 
