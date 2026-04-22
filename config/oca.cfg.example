@@ -1,2 +1,2 @@
 #Listen TCP client | TCP client port | TCP-client commands len | MAKA address | MAKA port | MAKA cmd len | Data dir | Cal mode | IntTrig En | MAKA write to file | MAKA send to OM | MAKA OM PreScale |
-1 8888 64 192.168.2.101 5000 24 ./data/ 0 0 1 1 10
+1 10000 64 192.168.2.101 5000 24 ./data/ 0 0 1 1 10
