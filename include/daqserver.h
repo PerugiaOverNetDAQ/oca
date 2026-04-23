@@ -98,7 +98,7 @@ public:
   /*!
     Update a single register with a mask to all detectors
   */
-  int UpdateReg(uint32_t regAddr, uint32_t regCont, uint32_t mask);
+  int updateReg(uint32_t regAddr, uint32_t regCont, uint32_t mask);
   int Init();
   void Start(char* runtype, uint32_t runnum, uint32_t unixtime);
   void Stop();

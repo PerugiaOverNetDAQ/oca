@@ -278,6 +278,42 @@ void fpgaDriver::setAdcDelay(uint32_t _adcDelay){
   SingleWriteReg(rBUSYADC_PARAM, regContent);
 }
 
+void fpgaDriver::biasTranslate(float biasIn, uint32_t &dacOut) {
+  // LT3482: Vctrl in the range 0-1.35V corresponding to 0-90V output. If Vctrl > 1.5, Vout = 90V
+  // R1 = R2*(Vo/Vctrl - 1), R1 = 1MOhm, R2 = 15kOhm
+  // Vo = (R1/R2 -1)*Vctrl = 66.667*Vctrl
+  // Vctrl = Vo/66.667 = 0.015*Vo
+  // 
+  // LTC1663: DAC 10-bit resolution, Vref = 2.5V
+  // Vout = DAC/(2^Nbits-1)*Vref = (DAC/1023)*2.5V = 0.00244*DAC
+  // DAC = Vout/Vref*(2^Nbits-1)
+  //
+  // Vout = Vctrl
+  // DAC = Vctrl/Vref*(2^Nbits-1) = Vctrl*1023/2.5 = 409.2*Vctrl
+  // Vctrl = 0.015 Vout -> DAC = 0.015*Vout*1023/2.5 = 6.138*Vout
+  //
+  // 70V -> 1.05V -> 429.66 (430, 0x1AE); 50V -> 0.75V -> 306.9 (307, 0x133);
+  dacOut = (uint32_t)(biasIn*6.138) & 0x000003FF;
+}
+
+void fpgaDriver::biasCtrl(float bias0, float bias1) {
+  uint32_t bias0Dac = 0;
+  uint32_t bias1Dac = 0;
+  biasTranslate(bias0, bias0Dac);
+  biasTranslate(bias1, bias1Dac);
+
+  // Write values
+  uint32_t regCont = (((bias1Dac&0x000003FF)<<16) | (bias0Dac&0x000003FF));
+  SingleWriteReg((uint32_t)rBIAS_PARAM, regCont);
+  
+  // Assert DAC write request for both Biases
+  SingleWriteReg((uint32_t)rBIAS_PARAM, (0x80008000) | regCont);
+  
+  // Dessert DAC write request
+  SingleWriteReg((uint32_t)rBIAS_PARAM, (0x00000000) | regCont);
+
+}
+
 int fpgaDriver::getEvent(std::vector<uint32_t>& evt, int* evtLen){
   int readErr = 0;
   uint32_t pktLen = 0;

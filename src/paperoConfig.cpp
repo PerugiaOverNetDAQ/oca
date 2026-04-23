@@ -131,9 +131,15 @@ int paperoConfig::config(istream& is)
           readOption<uint16_t>(tempBuffer->adcDelay, word);
           break;
         case 19:
-          readOption<bool>(tempBuffer->ideTest, word);
+          readOption<string>(tempBuffer->bias0, word);
           break;
         case 20:
+          readOption<string>(tempBuffer->bias1, word);
+          break;
+        case 21:
+          readOption<bool>(tempBuffer->ideTest, word);
+          break;
+        case 22:
           readOption<uint16_t>(tempBuffer->chTest, word);
           break;
         default:
@@ -145,6 +151,11 @@ int paperoConfig::config(istream& is)
     }
     //Discard empty or comment lines
     if (discardLine) continue;
+
+    if (not (isValidFixedFloat(tempBuffer->bias0) and isValidFixedFloat(tempBuffer->bias1))) {
+      cout << __METHOD_NAME__ << ") Bias values should be in the format XX.X. Abort." << endl;
+      exit(1);
+    }
 
     //Add the temporary buffer to the output map
     conf.push_back(tempBuffer);

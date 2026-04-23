@@ -19,6 +19,7 @@
 #include <cinttypes>
 #include <map>
 #include <vector>
+#include <regex>
 
 #include "daqConfig.h"
 #include "utility.h"
@@ -54,6 +55,8 @@ class paperoConfig
       bool adcFast; //!AD7276 Fast Mode support
       uint16_t busyLen; //!Duration of extended busy
       uint16_t adcDelay; //!ADC delay (in clock cycles)
+      string bias0; //!Bias value to be set for the detector 0
+      string bias1; //!Bias value to be set for the detector 1
       bool ideTest; //!Test port of IDE1140
       uint16_t chTest; //!IDE1140 channel connected to CAL port
 
@@ -78,6 +81,8 @@ class paperoConfig
         cout << "AD7276 Fast Mode:     " << adcFast << endl;
         cout << "Extended Busy Len:    " << busyLen << endl;
         cout << "ADC delay:            " << adcDelay << endl;
+        cout << "Bias 0:               " << bias0 << endl;
+        cout << "Bias 1:               " << bias1 << endl;
         cout << "IDE1140 Test Port:    " << ideTest << endl;
         cout << "IDE1140 Channel Test: " << chTest << endl;
       }
@@ -117,6 +122,16 @@ class paperoConfig
         stringstream(is) >> hex >> option;
       else
         stringstream(is) >> option;
+    }
+
+    bool isValidFixedFloat(const std::string& s) {
+      // ^      : start of string
+      // \d{2}  : exactly 2 digits
+      // \.     : decimal point
+      // \d     : exactly 1 digit
+      // $      : end of string
+      std::regex floatPattern(R"(^\d{2}\.\d$)");
+      return std::regex_match(s, floatPattern);
     }
 };
 

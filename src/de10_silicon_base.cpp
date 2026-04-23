@@ -28,6 +28,8 @@ de10_silicon_base::de10_silicon_base(std::string address, uint32_t port, paperoC
   intTrigEn     = (uint32_t)_intTrig & 0x00000001;
   busyLen       = (uint32_t)params->busyLen & 0x0000FFFF;
   adcDelay      = (uint32_t)params->adcDelay & 0x0000FFFF;
+  bias0         = params->bias0;
+  bias1         = params->bias1;
   ideTest       = (uint32_t)params->ideTest & 0x00000001;
   chTest        = (uint32_t)params->chTest & 0x000000FF;
 
@@ -50,6 +52,7 @@ de10_silicon_base::de10_silicon_base(std::string address, uint32_t port, paperoC
   SetCalibrationMode(calEn);
   SelectTrigger(intTrigEn);
   SetTrig2Hold(trig2Hold);
+  SetConfigBias();
 
   //Make sure system is NOT running
   SetMode(0);
@@ -124,8 +127,9 @@ int de10_silicon_base::writeReg(int regAddr, uint32_t regCont){
     ret = 1;
   }
   
-  int reply = 0;
-  if (ReceiveInt(reply)<=0) ret = 1;
+  uint32_t reply = 0;
+  ReceiveInt(reply);
+  if (reply!=0) ret = 1;
   
   return ret;
 }
@@ -449,6 +453,26 @@ int de10_silicon_base::SetAdcDelay(uint32_t _adcDelay){
   }
 
   ret += checkReply("Setting ADC Delay");
+  
+  return ret;
+}
+
+int de10_silicon_base::SetConfigBias(){
+  return SetBias(bias0, bias1);
+}
+
+int de10_silicon_base::SetBias(string _bias0, string _bias1){
+  int ret=0;
+  
+  if (SendCmd("SetBias")==0) {
+    Send(_bias0.c_str());
+    Send(_bias1.c_str());
+  }
+  else {
+    ret = 1;
+  }
+
+  ret += checkReply("Setting Biases");
   
   return ret;
 }

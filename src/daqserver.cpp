@@ -344,7 +344,7 @@ void daqserver::ProcessCmdReceived(char* msg){
 	        SetCalibrationMode(0);
           SelectTrigger(0);
 	      }
-	      else if (strcmp(cal,runtype)==0 | strcmp(calOffSpill,runtype)==0) {
+	      else if ((strcmp(cal,runtype)==0) | (strcmp(calOffSpill,runtype)==0)) {
 	        sprintf(sruntype, "CAL");
 	        SetCalibrationMode(1);
           SelectTrigger(1);
@@ -442,11 +442,11 @@ int daqserver::WriteReg(uint32_t regAddr, uint32_t regCont) {
   return ret;
 }
 
-int daqserver::UpdateReg(uint32_t regAddr, uint32_t regCont, uint32_t mask) {
+int daqserver::updateReg(uint32_t regAddr, uint32_t regCont, uint32_t mask) {
   int ret=0;
 
   for (uint32_t ii=0; ii<det.size(); ii++) {
-    ret |= (det.at(ii)->UpdateReg(regAddr, regCont, mask)<<ii);
+    ret |= (det.at(ii)->updateReg(regAddr, regCont, mask)<<ii);
   }
   return ret;
 }

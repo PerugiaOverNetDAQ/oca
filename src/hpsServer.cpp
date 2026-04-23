@@ -250,6 +250,27 @@ void hpsServer::ProcessCmdReceived(char* msg){
     fpga->setAdcDelay(rxUInt);
     Tx(&kOkVal, sizeof(kOkVal));
   }
+  else if(strcmp(msg, "cmd=setBias") == 0){
+    cmdReply("setBias");
+    const int kBiasLen = 5; //e.g., 50.5\0
+    char biasRx[kBiasLen]="";
+    float bias0;
+    float bias1;
+    
+    //Receive bias0 and bias1 and convert them in float
+    Rx(biasRx, ((kBiasLen*8)*sizeof(char)+1));
+    bias0 = std::stof(biasRx);
+    Rx(biasRx, ((kBiasLen*8)*sizeof(char)+1));
+    bias1 = std::atof(biasRx);
+    //std::stof(arr) std::strtof(arr, nullptr)
+
+    cout << __METHOD_NAME__ << ") Bias 0: "<< bias0 << " V - Bias 1: " << bias1 << " V" << endl;
+
+    //Apply the Biases
+    fpga->biasCtrl(bias0, bias1);
+
+    Tx(&kOkVal, sizeof(kOkVal));
+  }
   else if(strcmp(msg, "cmd=getEvent") == 0){
     cmdReply("getEvent");
 

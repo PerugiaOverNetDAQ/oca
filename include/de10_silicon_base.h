@@ -33,6 +33,8 @@ private:
   uint32_t adcFast;
   uint32_t busyLen;
   uint32_t adcDelay;
+  string   bias0;
+  string   bias1;
   uint32_t ideTest;
   uint32_t chTest;
 
@@ -75,6 +77,8 @@ public:
   int SetAdcFast(uint32_t _adcFast);
   int SetBusyLen(uint32_t _busyLen);
   int SetAdcDelay(uint32_t _adcDelay);
+  int SetConfigBias();
+  int SetBias(string _bias0, string _bias1);
   int runStart(); //!< Send the runStart command to PAPERO
   int runStop(); //!< Send the runStop command to PAPERO
 };

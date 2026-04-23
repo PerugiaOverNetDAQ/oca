@@ -19,6 +19,7 @@
 #define rADC_CLK_PARAM    6
 #define rMSD_PARAM        7
 #define rBUSYADC_PARAM    8
+#define rBIAS_PARAM       9
 #define rGW_VER           16
 #define rINT_TS_MSB       17
 #define rINT_TS_LSB       18
@@ -52,7 +53,9 @@ class fpgaDriver {
     inline bool Parity8(uint8_t dataIn){
       return __builtin_parity(dataIn&0x000000FF);
     };
-
+    
+    //!< Translate the input high voltage value to the corresponding DAC value to be sent to the FPGA
+    void biasTranslate(float biasIn, uint32_t &dacOut);
 
   public:
     axiFifo* confFifo = nullptr;
@@ -136,6 +139,9 @@ class fpgaDriver {
 
     //!< Configure delay between FE falling edge and AD conversion start
     void setAdcDelay(uint32_t _adcDelay);
+
+    //!< Configure the high voltage output of the LT3482 via the LTC1663 DAC
+    void biasCtrl(float bias0, float bias1);
 
     //!< Receive one event from the FastDATA FIFO
     int getEvent(std::vector<uint32_t>& evt, int* evtLen);
