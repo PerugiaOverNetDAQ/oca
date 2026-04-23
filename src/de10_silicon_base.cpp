@@ -113,6 +113,40 @@ int de10_silicon_base::readReg(int regAddr, uint32_t &regCont){
   return ret;
 }
 
+int de10_silicon_base::writeReg(int regAddr, uint32_t regCont){
+
+  int ret=0;
+  if (SendCmd("writeReg")==0) {
+    SendInt((uint32_t)regAddr);
+    SendInt((uint32_t)regCont);
+  }
+  else {
+    ret = 1;
+  }
+  
+  int reply = 0;
+  if (ReceiveInt(reply)<=0) ret = 1;
+  
+  return ret;
+}
+
+int de10_silicon_base::updateReg(int regAddr, uint32_t regCont, uint32_t mask){
+
+  int ret=0;
+  uint32_t regContOld = 0;
+  if (readReg(regAddr, regContOld)) {
+    ret = 1;
+  } else {
+    regCont = (regCont & mask) | (regContOld & ~mask);
+  }
+  
+  if (writeReg(regAddr, regCont)) {
+    ret = 1;
+  }
+
+  return ret;
+}
+
 //FIX ME: use the proper functions or the 2D array to retrieve configurations
 int de10_silicon_base::Init() {
   int ret=0;

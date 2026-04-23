@@ -107,9 +107,21 @@ void hpsServer::ProcessCmdReceived(char* msg){
     uint32_t regAddr = 0;
 
     Rx(&regAddr, sizeof(regAddr));
-    printf("Send read request...\n");
+    //printf("Send read request...\n");
     fpga->ReadReg(regAddr, &regContent);
     Tx(&regContent, sizeof(regContent));
+  }
+  else if(strcmp(msg, "cmd=writeReg") == 0){
+    cmdReply("writeReg");
+    uint32_t regContent = 0;
+    uint32_t regAddr = 0;
+    int ret = 1;
+
+    Rx(&regAddr, sizeof(regAddr));
+    Rx(&regContent, sizeof(regContent));
+    //printf("Send read request...\n");
+    fpga->SingleWriteReg(regAddr, regContent);
+    Tx(&ret, sizeof(ret));
   }
   else if((strcmp(msg, "cmd=setDelay")==0)||(strcmp(msg, "cmd=overWriteDelay")==0)){
     cmdReply("setDelay");

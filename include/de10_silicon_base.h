@@ -54,6 +54,8 @@ public:
   void SetPacketLen(uint32_t _pktLen){ pktLen = _pktLen; }//FIX ME: not effective until an Init is sent
   
   int readReg(int regAddr, uint32_t &regCont);
+  int writeReg(int regAddr, uint32_t regCont);
+  int updateReg(int regAddr, uint32_t regCont, uint32_t mask);
   int Init();
   int SetTrig2Hold(uint32_t delayIn);
   int SetMode(uint8_t modeIn);

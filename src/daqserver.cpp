@@ -433,6 +433,24 @@ int daqserver::ReadReg(uint32_t regAddr) {
   return ret;
 }
 
+int daqserver::WriteReg(uint32_t regAddr, uint32_t regCont) {
+  int ret=0;
+
+  for (uint32_t ii=0; ii<det.size(); ii++) {
+    ret |= (det.at(ii)->writeReg(regAddr, regCont)<<ii);
+  }
+  return ret;
+}
+
+int daqserver::UpdateReg(uint32_t regAddr, uint32_t regCont, uint32_t mask) {
+  int ret=0;
+
+  for (uint32_t ii=0; ii<det.size(); ii++) {
+    ret |= (det.at(ii)->UpdateReg(regAddr, regCont, mask)<<ii);
+  }
+  return ret;
+}
+
 int daqserver::Init() {
   int ret = 0;
 
