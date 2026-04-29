@@ -99,13 +99,16 @@ void hpsDataServer::dataReading(){
     
     getSendEvt(evt);
   }
+  cout << "<---------- TOTAL EVENTS: " << kEvtCount << "---------->\n";
   
   //When kIsRunning=false, disable triggers in FPGA and empty FIFOs
   //fpga->SetMode(0);
   for (int ff=0; ff<100; ff++){
     getSendEvt(evt);
   }
-  printf("%s) End of Event: Events still available after 100 readings.\n",
-          __METHOD_NAME__);
+  //printf("%s) End of Event: Events still available after 100 readings.\n",
+  //        __METHOD_NAME__);
+  cout << "<---------- TOTAL EVENTS: " << kEvtCount << "---------->\n";
+  kEvtCount = 0;
   
 }
