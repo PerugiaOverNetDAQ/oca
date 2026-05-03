@@ -66,7 +66,7 @@ class makaClient : public tcpclient {
     /*
       Send cmd=runStop
     */
-    int runStop();
+    int runStop(uint32_t& _nEvts);
 
 };
 

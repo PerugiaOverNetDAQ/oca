@@ -93,7 +93,7 @@ public:
   int ReadReg(uint32_t regAddr);
   int Init();
   void Start(char* runtype, uint32_t runnum, uint32_t unixtime);
-  void Stop();
+  void Stop(uint32_t& _nEvts);
 
   /*!
     Receive commands and call the appropriate function

@@ -448,8 +448,9 @@ void makaMerger::processCmds(char* msg){
   else if (strcmp(msg, "cmd=runStop") == 0) {
     cmdReply("runStop");
 
-    printf("%s) Stop run %u with %u events.\n", __METHOD_NAME__, kRunNum, kNEvts);
     runStop();
+    printf("%s) Stop run %u with %u events.\n", __METHOD_NAME__, kRunNum, kNEvts);
+    Tx(&kNEvts,sizeof(kNEvts));
     Tx(&kOkVal, sizeof(kOkVal));
   }
   else {
