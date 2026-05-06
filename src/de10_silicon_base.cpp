@@ -464,7 +464,7 @@ int de10_silicon_base::SetConfigBias(){
 int de10_silicon_base::SetBias(string _bias0, string _bias1){
   int ret=0;
   
-  if (SendCmd("SetBias")==0) {
+  if (SendCmd("setBias")==0) {
     Send(_bias0.c_str());
     Send(_bias1.c_str());
   }
