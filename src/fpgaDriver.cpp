@@ -279,21 +279,22 @@ void fpgaDriver::setAdcDelay(uint32_t _adcDelay){
 }
 
 void fpgaDriver::biasTranslate(float biasIn, uint32_t &dacOut) {
-  // LT3482: Vctrl in the range 0-1.35V corresponding to 0-90V output. If Vctrl > 1.5, Vout = 90V
+  // LT3482: Vctrl in the range 0-1.371V corresponding to 0-90V output. If Vctrl > 1.5, Vout = 90V
   // R1 = R2*(Vo/Vctrl - 1), R1 = 1MOhm, R2 = 15kOhm
-  // Vo = (R1/R2 -1)*Vctrl = 66.667*Vctrl
-  // Vctrl = Vo/66.667 = 0.015*Vo
+  // Vo = (R1/R2 -1)*Vctrl = 66.666667*Vctrl
+  // Vctrl = Vo/66.667 = 0.015228*Vo
   // 
   // LTC1663: DAC 10-bit resolution, Vref = 2.5V
-  // Vout = DAC/(2^Nbits-1)*Vref = (DAC/1023)*2.5V = 0.00244*DAC
+  // Vout = DAC/(2^Nbits-1)*Vref = (DAC/1023)*2.5V = 0.002444*DAC
   // DAC = Vout/Vref*(2^Nbits-1)
   //
   // Vout = Vctrl
   // DAC = Vctrl/Vref*(2^Nbits-1) = Vctrl*1023/2.5 = 409.2*Vctrl
-  // Vctrl = 0.015 Vout -> DAC = 0.015*Vout*1023/2.5 = 6.138*Vout
+  // Vctrl = 0.015228 Vout -> DAC = 0.015228*Vout*1023/2.5 = 6.231472*Vout
   //
-  // 70V -> 1.05V -> 429.66 (430, 0x1AE); 50V -> 0.75V -> 306.9 (307, 0x133);
-  dacOut = (uint32_t)(biasIn*6.138) & 0x000003FF;
+  // 70V -> 1.066V -> 436 , 0x1B4; 50V -> 0.761V -> 312, 0x138;
+  const float kConv = (1023/2.5)*(15e3/1e6-15e3);
+  dacOut = (uint32_t)(biasIn*kConv) & 0x000003FF;
 }
 
 void fpgaDriver::biasCtrl(float bias0, float bias1) {
