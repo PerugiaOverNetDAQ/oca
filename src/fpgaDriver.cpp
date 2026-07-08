@@ -312,7 +312,41 @@ void fpgaDriver::biasCtrl(float bias0, float bias1) {
   
   // Dessert DAC write request
   SingleWriteReg((uint32_t)rBIAS_PARAM, (0x00000000) | regCont);
+}
 
+void fpgaDriver::biasCurrTranslate(uint32_t _currADC, float& _currA) {
+  //LT3482: Iout:Imon 5:1; Imon converted with R6
+  //  Iout=(5/R6)⋅Vmon
+  //LTC2312: internal reference: Vmax = 4.096 V. LSB: 1 mV
+  //  ADC=Vin/LSB
+  //
+  //Combined: Iout=(5⋅LSB/R6)⋅ADC
+  //  LSB=1 mV; R6=20 k;
+  //  Iout[mA] = ADC/4000
+  const float kConv = 1/4000;
+  _currA = ((_currADC)&0x00000FFF)*kConv*1e-3;
+}
+
+void fpgaDriver::biasCurrRead(float& _curr0, float& _curr1, uint8_t& _flags) {
+  //rBIAS_CURR_MON reg content
+  //     31 - LT1663 Ack 1
+  //     30 - LT1663 Err 1
+  //     29 - LTC2312 Busy
+  //     28 - LTC2312 Done
+  //[27:16] - Bias Current 1
+  //     15 - LT1663 Ack 0
+  //     14 - LT1663 Err 0
+  // [11:0] - Bias Current 0;
+
+  uint32_t regContent = 0;
+  //Read reg
+  ReadReg(rBIAS_CURR_MON, &regContent);
+  //Populate flags
+  _flags = ((regContent&0xF0000000)>>24)|((regContent&0x0000C000)>>12);
+  
+  //Convert current and update port
+  biasCurrTranslate((regContent&0x00000FFF), _curr0);
+  biasCurrTranslate((regContent&0x0FFF0000)>>16, _curr1);
 }
 
 int fpgaDriver::getEvent(std::vector<uint32_t>& evt, int* evtLen){

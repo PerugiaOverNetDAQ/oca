@@ -477,6 +477,23 @@ int de10_silicon_base::SetBias(string _bias0, string _bias1){
   return ret;
 }
 
+int de10_silicon_base::GetBiasCurr(float& _curr0, float& _curr1, uint8_t& _flags){
+  int ret=0;
+  
+  if (SendCmd("getBiasCurr")==0) {
+    Receive(&_curr0, sizeof(_curr0));
+    Receive(&_curr1, sizeof(_curr1));
+    Receive(&_flags, sizeof(_flags));
+  }
+  else {
+    ret = 1;
+  }
+
+  ret += checkReply("Bias Currents Read");
+  
+  return ret;
+}
+
 int de10_silicon_base::runStart() {
   int ret = 0;
   if (SendCmd("runStart")!=0) {

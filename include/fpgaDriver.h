@@ -30,6 +30,7 @@
 #define rEXT_TRG_COUNT    23
 #define rINT_TRG_COUNT    24
 #define rFDI_FIFO_NUMWORD 25
+#define rBIAS_CURR_MON    26
 #define rPIUMONE          31
 
 #include <inttypes.h>
@@ -56,6 +57,9 @@ class fpgaDriver {
     
     //!< Translate the input high voltage value to the corresponding DAC value to be sent to the FPGA
     void biasTranslate(float biasIn, uint32_t &dacOut);
+
+    //!< Translate the input ADC value of the bias current in Ampere 
+    void biasCurrTranslate(uint32_t _currADC, float& _currA);
 
   public:
     axiFifo* confFifo = nullptr;
@@ -142,6 +146,9 @@ class fpgaDriver {
 
     //!< Configure the high voltage output of the LT3482 via the LTC1663 DAC
     void biasCtrl(float bias0, float bias1);
+
+    //!< Read the bias current in output from the LT3482 via the LTC2312 ADC, together with flags
+    void biasCurrRead(float& _curr0, float& _curr1, uint8_t& _flags);
 
     //!< Receive one event from the FastDATA FIFO
     int getEvent(std::vector<uint32_t>& evt, int* evtLen);

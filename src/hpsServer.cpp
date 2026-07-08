@@ -54,8 +54,10 @@ void* hpsServer::ListenCmd(){
 
   bool ListenCmdOn = true;
   kEvtCount = 0;
-  kStartRunTime = std::chrono::system_clock::now();
+  kStartRunTime = chrono::system_clock::now();
   int bytesRead=0;
+  auto lastTime = chrono::steady_clock::now();
+
   while(ListenCmdOn) {
     char msg[256]="";
     bytesRead = 0;
@@ -80,6 +82,16 @@ void* hpsServer::ListenCmd(){
       ProcessCmdReceived(msg);
     }
     bzero(msg, sizeof(msg));
+
+    auto currentTime = chrono::steady_clock::now();
+    if (chrono::duration_cast<chrono::seconds>(currentTime - lastTime).count() >= 5) {
+      lastTime = currentTime;
+      float curr0;
+      float curr1;
+      uint8_t flags;
+      fpga->biasCurrRead(curr0, curr1, flags);
+      cout << __METHOD_NAME__ << ") Bias Current 0: "<< curr0 << " uA - Bias Current 1: " << curr1 << " uA" << endl;
+    }
   }
   return nullptr;
 }
@@ -268,6 +280,19 @@ void hpsServer::ProcessCmdReceived(char* msg){
 
     //Apply the Biases
     fpga->biasCtrl(bias0, bias1);
+
+    Tx(&kOkVal, sizeof(kOkVal));
+  }
+  else if(strcmp(msg, "cmd=getBiasCurr") == 0){
+    cmdReply("getBiasCurr");
+    float curr0;
+    float curr1;
+    uint8_t flags;
+    fpga->biasCurrRead(curr0, curr1, flags);
+    
+    Tx(&curr0, sizeof(curr0));
+    Tx(&curr1, sizeof(curr1));
+    Tx(&flags, sizeof(flags));
 
     Tx(&kOkVal, sizeof(kOkVal));
   }

@@ -79,6 +79,7 @@ public:
   int SetAdcDelay(uint32_t _adcDelay);
   int SetConfigBias();
   int SetBias(string _bias0, string _bias1);
+  int GetBiasCurr(float& _curr0, float& _curr1, uint8_t& _flags);
   int runStart(); //!< Send the runStart command to PAPERO
   int runStop(); //!< Send the runStop command to PAPERO
 };
