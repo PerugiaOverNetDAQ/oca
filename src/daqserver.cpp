@@ -158,6 +158,7 @@ void daqserver::SelectTrigger(uint32_t trig){
 
   trigtype = trig;
   
+  //Only select trigger type in the Patch-Panel DE10 (assuming it is the last one)
   //det[portdet.size()-1]->SelectTrigger(trigtype);
   for (int ii=0; ii<(int)(det.size()); ii++) {
     det[ii]->SelectTrigger(trigtype);
@@ -391,7 +392,10 @@ void daqserver::ProcessCmdReceived(char* msg){
           ReplyToCmd(tempStr);
           return;
         }
-        Stop();
+        uint32_t nEvts = 0;
+        Stop(nEvts);
+        printf("%s)        Events: %d \n", __METHOD_NAME__, nEvts);
+        Tx(&nEvts, sizeof(nEvts));
         ReplyToCmd(msg);
       }
       else {
@@ -603,12 +607,13 @@ void daqserver::Start(char* runtype, uint32_t runnum, uint32_t unixtime) {
   printf("%s) File %s closed\n", __METHOD_NAME__, dataFileName);
 }
 
-void daqserver::Stop() {
+void daqserver::Stop(uint32_t &_nEvts) {
   if(kStart){
     //FIX ME: metterci un while che fa N GetEvent()
     kStart = false;
     SetMode(0);
-    maka->runStop();
+    maka->runStop(_nEvts);
+    printf("%s) Events: %d \n", __METHOD_NAME__, _nEvts);
     runStop();
     sleep(10);
   }

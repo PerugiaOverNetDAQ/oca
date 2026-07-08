@@ -101,13 +101,16 @@ int makaClient::runStart(std::string _runType, uint32_t _runNum, uint32_t _runTi
   return ret;
 }
 
-int makaClient::runStop(){
+int makaClient::runStop(uint32_t& _nEvts){
 
   //Tx command
   if (SendCmd("runStop")!=0) {
     return 1;
   }
   printf("%s) Stopping merger...\n", __METHOD_NAME__);
+
+  ReceiveInt(_nEvts);
+  printf("%s)        Events: %d \n", __METHOD_NAME__, _nEvts);
 
   int ret = checkReply("Stopping Run");
   
