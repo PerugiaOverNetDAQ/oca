@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt  
 
-# Importiamo il nostro modulo personalizzato per leggere/scrivere i file
+# modulo personalizzato per leggere/scrivere i file
 import config_parser
 
 class HerdDaqWindow(QMainWindow):
@@ -20,13 +20,12 @@ class HerdDaqWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
         
-        # Costruzione dell'Interfaccia Grafica
+        # Costruzione dell'interfaccia grafica
         self.init_global_settings(main_layout)
         self.init_papero_grid(main_layout)
         self.init_execution_panel(main_layout)
         
-        # Popolamento dei dati: subito dopo aver disegnato i widget vuoti,
-        # li riempiamo con i valori letti dai file di configurazione (se esistono).
+        # Popolamento dei dati
         self.load_configuration_into_ui()
         
     def init_global_settings(self, parent_layout):
@@ -63,13 +62,13 @@ class HerdDaqWindow(QMainWindow):
             "Bias 1", "Test Mode", "Canale Test"
         ]
         
-        # Disegna l'intestazione della tabella (riga 0)
+        # Intestazione della tabella
         for col_idx, text in enumerate(headers):
             grid_layout.addWidget(QLabel(f"<b>{text}</b>"), 0, col_idx)
             
         self.papero_rows = []
         
-        # Disegna le 10 righe della tabella
+        # Crea le 10 righe della tabella
         for i in range(10):
             row_widgets = {}
             row_idx = i + 1
@@ -109,9 +108,9 @@ class HerdDaqWindow(QMainWindow):
             grid_layout.addWidget(test_mode_cb, row_idx, 6, Qt.AlignmentFlag.AlignCenter)
             grid_layout.addWidget(test_chan_sb, row_idx, 7)
             
-            # Stato iniziale: la riga è spenta
+            # Stato iniziale, la riga è spenta
             self.toggle_row_widgets(row_widgets, False)
-            # Collega il click della checkbox alla funzione di accensione/spegnimento riga
+            # Accensione/spegnimento riga
             enable_cb.toggled.connect(lambda checked, rw=row_widgets: self.toggle_row_widgets(rw, checked))
             
             self.papero_rows.append(row_widgets)
@@ -119,7 +118,7 @@ class HerdDaqWindow(QMainWindow):
         parent_layout.addWidget(group_box)
         
     def toggle_row_widgets(self, widgets, enabled):
-        """Abilita o disabilita (grigetto) l'interazione con i widget della riga"""
+        """Abilita o disabilita l'interazione con i widget della riga"""
         widgets["ip"].setEnabled(enabled)
         widgets["send_maka"].setEnabled(enabled)
         widgets["trigger"].setEnabled(enabled)
@@ -144,7 +143,7 @@ class HerdDaqWindow(QMainWindow):
         self.stop_btn = QPushButton("STOP")
         self.stop_btn.setMinimumWidth(100)
         
-        # Al click dello START salva i dati
+        # START salva i dati
         self.start_btn.clicked.connect(self.dump_ui_to_files)
         
         layout.addWidget(self.start_btn)
@@ -217,9 +216,8 @@ class HerdDaqWindow(QMainWindow):
         print("[SUCCESS] Parametri salvati con successo in oca.cfg e papero.cfg!")
 
 
-# Avvio sicuro dell'applicazione isolando l'esecuzione dello script principale
 if __name__ == "__main__":
-    app = QApplication(sys.argv)  # Generazione dell'istanza del motore Qt
-    window = HerdDaqWindow()      # Allocazione in memoria della finestra
-    window.show()                 # Visualizzazione dell'interfaccia a schermo
-    sys.exit(app.exec())          # Avvio del ciclo continuo degli eventi (Event Loop)
+    app = QApplication(sys.argv)
+    window = HerdDaqWindow()      
+    window.show()              
+    sys.exit(app.exec())        

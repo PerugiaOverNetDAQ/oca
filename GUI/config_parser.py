@@ -1,21 +1,45 @@
 import configparser
 import os
+from pathlib import Path
 
-def load_oca_config(filepath="oca/config/oca.cfg"):
+ROOT_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_OCA_PATH = str(ROOT_DIR / "config" / "oca.cfg")
+DEFAULT_PAPERO_PATH = str(ROOT_DIR / "config" / "papero.cfg")
+
+
+def get_config_parser():
+    parser = configparser.ConfigParser()
+    # .optionxform=str impedisce la conversione automatica in minuscolo
+    parser.optionxform = str
+    return parser
+
+
+def load_oca_config(filepath=DEFAULT_OCA_PATH):
     """
+    Carica la configurazione di OCA.
     Legge il file oca.cfg e restituisce un dizionario con i parametri globali.
     Se il file non esiste, restituisce un dizionario con valori di default sicuri.
     """
-    config = configparser.ConfigParser()
-    
-    # Definiamo i valori di default. Se il programma parte per la prima volta
-    # e il file non esiste, l'interfaccia non andrà in crash ma userà questi.
+
+    config = get_config_parser()  
+
+    # Definiamo i valori di default
     data = {
+        # Campi gestiti dalla GUI
         "oca_ip": "",
         "maka_dir": "",
         "write_file": False,
         "send_om": False,
-        "om_prescaler": 0
+        "om_prescaler": 0,
+        
+        # Campi EXTRA allineati
+        "listenClient": False,
+        "portClient": 0,
+        "clientCmdLen": 0,
+        "makaPort": 0,
+        "makaCmdLen": 0,
+        "calMode": False,
+        "intTrigEn": False
     }
     
     # Controllo di sicurezza
@@ -27,50 +51,78 @@ def load_oca_config(filepath="oca/config/oca.cfg"):
         config.read(filepath)
         if "GLOBAL" in config:
             sec = config["GLOBAL"]
-            # Estraiamo i valori castandoli nel tipo corretto (stringa, booleano, intero)
-            data["oca_ip"] = sec.get("oca_ip", "")
-            data["maka_dir"] = sec.get("maka_dir", "")
-            data["write_file"] = sec.getboolean("write_file", False)
-            data["send_om"] = sec.getboolean("send_om", False)
-            data["om_prescaler"] = sec.getint("om_prescaler", 0)
+            # Lettura campi GUI (con supporto al doppio nome per compatibilità)
+            data["oca_ip"] = sec.get("oca_ip", sec.get("makaIpAddr", ""))
+            data["maka_dir"] = sec.get("maka_dir", sec.get("dataFolder", ""))
+            data["write_file"] = sec.getboolean("write_file", sec.getboolean("makaSendToFile", False))
+            data["send_om"] = sec.getboolean("send_om", sec.getboolean("makaSendToOm", False))
+            data["om_prescaler"] = sec.getint("om_prescaler", sec.getint("makaOmPreScale", 0))
+            
+            # Lettura campi EXTRA
+            data["listenClient"] = sec.getboolean("listenClient", False)
+            data["portClient"] = sec.getint("portClient", 0)
+            data["clientCmdLen"] = sec.getint("clientCmdLen", 0)
+            data["makaPort"] = sec.getint("makaPort", 0)
+            data["makaCmdLen"] = sec.getint("makaCmdLen", 0)
+            data["calMode"] = sec.getboolean("calMode", False)
+            data["intTrigEn"] = sec.getboolean("intTrigEn", False)
     except Exception as e:
         print(f"[ERROR] Errore nel parsing di {filepath}: {e}")
         
     return data
 
-def save_oca_config(data, filepath="oca/config/oca.cfg"):
+def save_oca_config(data, filepath=DEFAULT_OCA_PATH):
     """
-    Riceve un dizionario 'data' e lo serializza scrivendolo nel file oca.cfg.
+    Salva il file oca.cfg. Se il main non passa i campi extra, 
+    vengono inseriti automaticamente con valori di default.
     """
-    config = configparser.ConfigParser()
-    
-    # Crea la sezione [GLOBAL] tipica dei file INI
+    dir_name = os.path.dirname(filepath)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
+        
+    config = get_config_parser() 
+
+    # Crea la sezione [GLOBAL] dei file INI
+    # Scriviamo TUTTI i 12 parametri nel file .cfg
     config["GLOBAL"] = {
+        # Se presenti nel dizionario 'data' usa quelli della GUI, altrimenti usa i default
         "oca_ip": str(data.get("oca_ip", "")),
         "maka_dir": str(data.get("maka_dir", "")),
         "write_file": str(data.get("write_file", False)),
         "send_om": str(data.get("send_om", False)),
-        "om_prescaler": str(data.get("om_prescaler", 0))
+        "om_prescaler": str(data.get("om_prescaler", 0)),
+        
+        # Parametri aggiuntivi compilati in automatico
+        "listenClient": str(data.get("listenClient", False)),
+        "portClient": str(data.get("portClient", 0)),
+        "clientCmdLen": str(data.get("clientCmdLen", 0)),
+        "makaPort": str(data.get("makaPort", 0)),
+        "makaCmdLen": str(data.get("makaCmdLen", 0)),
+        "calMode": str(data.get("calMode", False)),
+        "intTrigEn": str(data.get("intTrigEn", False))
     }
     
-    # Apre il file in modalità scrittura ("w") e ci riversa i dati
     with open(filepath, "w") as configfile:
         config.write(configfile)
 
-def load_papero_config(filepath="oca/config/papero.cfg"):
+def load_papero_config(filepath=DEFAULT_PAPERO_PATH):
     """
-    Legge il file papero.cfg e restituisce una lista contenente 10 dizionari 
-    (uno per ogni possibile modulo PAPERO).
+    Carica la configurazione dei 10 moduli PAPERO includendo tutti i 21 campi
     """
-    config = configparser.ConfigParser()
+    config = get_config_parser() 
     data = []
-    
-    # Inizializza la lista con 10 strutture vuote/di default
+
     for i in range(10):
         data.append({
-            "enable": False, "ip": "", "send_maka": False,
-            "trigger": 0, "bias0": 0.0, "bias1": 0.0,
-            "test_mode": False, "test_channel": 0
+            # Campi della GUI
+            "enable": False, "ip": "", "send_maka": False, "trigger": 0, "test_mode": False, "test_channel": 0,
+            "bias0": 0.0, "bias1": 0.0, 
+            
+            # Campi EXTRA allineati 
+            "id": i + 1, "tcpPort": 0, "cmdLen": 0, "testUnitCfg": 0,
+            "hkEn": False, "dataEn": False, "pktLen": 0, "feClkDiv": 0,
+            "feClkDuty": 0, "adcClkDiv": 0, "adcClkDuty": 0, "trig2Hold": 0,
+            "adcFast": False, "busyLen": 0, "adcDelay": 0, "ideTest": False
         })
         
     if not os.path.exists(filepath):
@@ -78,43 +130,81 @@ def load_papero_config(filepath="oca/config/papero.cfg"):
         
     try:
         config.read(filepath)
-        # Cerca nel file le sezioni da [PAPERO_1] a [PAPERO_10]
         for i in range(10):
             section_name = f"PAPERO_{i+1}"
             if section_name in config:
                 sec = config[section_name]
-                # Sovrascrive i default con i valori trovati nel file
-                data[i]["enable"] = sec.getboolean("enable", False)
-                data[i]["ip"] = sec.get("ip", "")
+                # Campi GUI
+                data[i]["enable"] = sec.getboolean("enable", sec.getboolean("makaEnable", False))
+                data[i]["ip"] = sec.get("ip", sec.get("ipAddr", ""))
                 data[i]["send_maka"] = sec.getboolean("send_maka", False)
-                data[i]["trigger"] = sec.getint("trigger", 0)
+                data[i]["trigger"] = sec.getint("trigger", sec.getint("intTrigPeriod", 0))
+                data[i]["test_mode"] = sec.getboolean("test_mode", sec.getboolean("testUnitEn", False))
+                data[i]["test_channel"] = sec.getint("test_channel", sec.getint("chTest", 0))
                 data[i]["bias0"] = sec.getfloat("bias0", 0.0)
                 data[i]["bias1"] = sec.getfloat("bias1", 0.0)
-                data[i]["test_mode"] = sec.getboolean("test_mode", False)
-                data[i]["test_channel"] = sec.getint("test_channel", 0)
+                
+                # Campi EXTRA
+                data[i]["id"] = sec.getint("id", i + 1)
+                data[i]["tcpPort"] = sec.getint("tcpPort", 0)
+                data[i]["cmdLen"] = sec.getint("cmdLen", 0)
+                data[i]["testUnitCfg"] = sec.getint("testUnitCfg", 0)
+                data[i]["hkEn"] = sec.getboolean("hkEn", False)
+                data[i]["dataEn"] = sec.getboolean("dataEn", False)
+                data[i]["pktLen"] = sec.getint("pktLen", 0)
+                data[i]["feClkDiv"] = sec.getint("feClkDiv", 0)
+                data[i]["feClkDuty"] = sec.getint("feClkDuty", 0)
+                data[i]["adcClkDiv"] = sec.getint("adcClkDiv", 0)
+                data[i]["adcClkDuty"] = sec.getint("adcClkDuty", 0)
+                data[i]["trig2Hold"] = sec.getint("trig2Hold", 0)
+                data[i]["adcFast"] = sec.getboolean("adcFast", False)
+                data[i]["busyLen"] = sec.getint("busyLen", 0)
+                data[i]["adcDelay"] = sec.getint("adcDelay", 0)
+                data[i]["ideTest"] = sec.getboolean("ideTest", False)
     except Exception as e:
         print(f"[ERROR] Errore nel parsing di {filepath}: {e}")
         
     return data
 
-def save_papero_config(data_list, filepath="oca/config/papero.cfg"):
+def save_papero_config(data_list, filepath=DEFAULT_PAPERO_PATH):
     """
-    Riceve una lista di 10 dizionari e li salva nel file papero.cfg creando
-    10 sezioni distinte.
+    Salva il file papero.cfg strutturando le sezioni con tutti i 21 parametri
+    richiesti dal C++ (iniettando i default se non presenti nel dizionario della GUI).
     """
-    config = configparser.ConfigParser()
-    
+    dir_name = os.path.dirname(filepath)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
+        
+    config = get_config_parser() 
     for i, data in enumerate(data_list):
         section_name = f"PAPERO_{i+1}"
         config[section_name] = {
+            # Campi gestiti dalla GUI
             "enable": str(data.get("enable", False)),
             "ip": str(data.get("ip", "")),
-            "send_maka": str(data.get("send_maka", False)),
             "trigger": str(data.get("trigger", 0)),
+            "test_mode": str(data.get("test_mode", False)),
+            "test_channel": str(data.get("test_channel", 0)),
             "bias0": str(data.get("bias0", 0.0)),
             "bias1": str(data.get("bias1", 0.0)),
-            "test_mode": str(data.get("test_mode", False)),
-            "test_channel": str(data.get("test_channel", 0))
+            
+            # Campi EXTRA richiesti generati in automatico
+            "id": str(data.get("id", i + 1)),
+            "tcpPort": str(data.get("tcpPort", 0)),
+            "cmdLen": str(data.get("cmdLen", 0)),
+            "testUnitCfg": str(data.get("testUnitCfg", 0)),
+            "hkEn": str(data.get("hkEn", False)),
+            "dataEn": str(data.get("dataEn", False)),
+            "pktLen": str(data.get("pktLen", 0)),
+            "feClkDiv": str(data.get("feClkDiv", 0)),
+            "feClkDuty": str(data.get("feClkDuty", 0)),
+            "adcClkDiv": str(data.get("adcClkDiv", 0)),
+            "adcClkDuty": str(data.get("adcClkDuty", 0)),
+            "trig2Hold": str(data.get("trig2Hold", 0)),
+            "adcFast": str(data.get("adcFast", False)),
+            "busyLen": str(data.get("busyLen", 0)),
+            "adcDelay": str(data.get("adcDelay", 0)),
+            "ideTest": str(data.get("ideTest", False))
         }
         
     with open(filepath, "w") as configfile:

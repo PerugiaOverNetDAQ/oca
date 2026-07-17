@@ -52,109 +52,74 @@ void paperoConfig::openInputFile(const string& filePath, ifstream& inFile)
 int paperoConfig::config(istream& is)
 {
   int linesRead = 0;
-  int wordsRead = 0;
-  bool discardLine;
-  
-  //Get a complete line (until \n)
+  configParams* tempBuffer = nullptr;
+
   for (string line; getline(is, line); ) {
-    configParams* tempBuffer = new configParams;
-    stringstream ss(line);
-
-    //Check if empty line
-    discardLine = line.length() == 0;
-    //Read line, word by word
-    for (string word; getline(ss, word, ' '); ) {
-      //Ignore comments
-      if ((wordsRead == 0) & (word[0] == '#'))
-      {
-        discardLine = true;
-        break;
-      }
-
-      //Pick the right word
-      switch(wordsRead){
-        case 0:
-          readOption<uint32_t>(tempBuffer->id, word);
-          break;
-        case 1:
-          readOption<bool>(tempBuffer->makaEnable, word);
-          break;
-        case 2:
-          readOption<string>(tempBuffer->ipAddr, word);
-          break;
-        case 3:
-          readOption<int>(tempBuffer->tcpPort, word);
-          break;
-        case 4:
-          readOption<int>(tempBuffer->cmdLen, word);
-          break;
-        case 5:
-          readOption<uint8_t>(tempBuffer->testUnitCfg, word);
-          break;
-        case 6:
-          readOption<bool>(tempBuffer->testUnitEn, word);
-          break;
-        case 7:
-          readOption<bool>(tempBuffer->hkEn, word);
-          break;
-        case 8:
-          readOption<bool>(tempBuffer->dataEn, word);
-          break;
-        case 9:
-          readOption<uint32_t>(tempBuffer->intTrigPeriod, word);
-          break;
-        case 10:
-          readOption<uint32_t>(tempBuffer->pktLen, word);
-          break;
-        case 11:
-          readOption<uint16_t>(tempBuffer->feClkDiv, word);
-          break;
-        case 12:
-          readOption<uint16_t>(tempBuffer->feClkDuty, word);
-          break;
-        case 13:
-          readOption<uint16_t>(tempBuffer->adcClkDiv, word);
-          break;
-        case 14:
-          readOption<uint16_t>(tempBuffer->adcClkDuty, word);
-          break;
-        case 15:
-          readOption<uint16_t>(tempBuffer->trig2Hold, word);
-          break;
-        case 16:
-          readOption<bool>(tempBuffer->adcFast, word);
-          break;
-        case 17:
-          readOption<uint16_t>(tempBuffer->busyLen, word);
-          break;
-        case 18:
-          readOption<uint16_t>(tempBuffer->adcDelay, word);
-          break;
-        case 19:
-          readOption<bool>(tempBuffer->ideTest, word);
-          break;
-        case 20:
-          readOption<uint16_t>(tempBuffer->chTest, word);
-          break;
-        default:
-          cout << __METHOD_NAME__ << ") Too many columns in config file." << endl;
-          exit(1);
-      }
-
-      wordsRead++;
-    }
-    //Discard empty or comment lines
-    if (discardLine) continue;
-
-    //Add the temporary buffer to the output map
-    conf.push_back(tempBuffer);
-    
-    wordsRead = 0;
     linesRead++;
+
+    while (line.length() > 0 && (line[line.length() - 1] == '\r' || line[line.length() - 1] == '\n')) {
+      line.erase(line.length() - 1, 1);
+    }
+
+    if (line.empty() || line[0] == '#' || line[0] == ';') {
+      continue;
+    }
+
+    if (line[0] == '[' && line[line.length() - 1] == ']') {
+      tempBuffer = new configParams;
+      conf.push_back(tempBuffer);
+
+      size_t underscorePos = line.find('_');
+      if (underscorePos != string::npos) {
+        string idStr = line.substr(underscorePos + 1, line.length() - underscorePos - 2);
+        stringstream ss(idStr);
+        ss >> tempBuffer->id;
+      }
+      continue;
+    }
+
+    size_t pos = line.find('=');
+    if (pos != string::npos && tempBuffer != nullptr) {
+      string key = line.substr(0, pos);
+      string value = line.substr(pos + 1);
+
+      while (key.length() > 0 && (key[key.length() - 1] == ' ' || key[key.length() - 1] == '\t')) {
+        key.erase(key.length() - 1, 1);
+      }
+      while (key.length() > 0 && (key[0] == ' ' || key[0] == '\t')) {
+        key.erase(0, 1);
+      }
+      while (value.length() > 0 && (value[value.length() - 1] == ' ' || value[value.length() - 1] == '\t')) {
+        value.erase(value.length() - 1, 1);
+      }
+      while (value.length() > 0 && (value[0] == ' ' || value[0] == '\t')) {
+        value.erase(0, 1);
+      }
+
+      if (key == "enable" || key == "makaEnable")          readOption<bool>(tempBuffer->makaEnable, value);
+      else if (key == "ip" || key == "ipAddr")              readOption<string>(tempBuffer->ipAddr, value);
+      else if (key == "trigger" || key == "intTrigPeriod")  readOption<uint32_t>(tempBuffer->intTrigPeriod, value);
+      else if (key == "test_mode" || key == "testUnitEn")   readOption<bool>(tempBuffer->testUnitEn, value);
+      else if (key == "test_channel" || key == "chTest")    readOption<uint16_t>(tempBuffer->chTest, value);
+      else if (key == "id")            readOption<uint32_t>(tempBuffer->id, value);
+      else if (key == "tcpPort")       readOption<int>(tempBuffer->tcpPort, value);
+      else if (key == "cmdLen")        readOption<int>(tempBuffer->cmdLen, value);
+      else if (key == "testUnitCfg")   readOption<uint8_t>(tempBuffer->testUnitCfg, value);
+      else if (key == "hkEn")          readOption<bool>(tempBuffer->hkEn, value);
+      else if (key == "dataEn")        readOption<bool>(tempBuffer->dataEn, value);
+      else if (key == "pktLen")        readOption<uint32_t>(tempBuffer->pktLen, value);
+      else if (key == "feClkDiv")      readOption<uint16_t>(tempBuffer->feClkDiv, value);
+      else if (key == "feClkDuty")     readOption<uint16_t>(tempBuffer->feClkDuty, value);
+      else if (key == "adcClkDiv")     readOption<uint16_t>(tempBuffer->adcClkDiv, value);
+      else if (key == "adcClkDuty")    readOption<uint16_t>(tempBuffer->adcClkDuty, value);
+      else if (key == "trig2Hold")     readOption<uint16_t>(tempBuffer->trig2Hold, value);
+      else if (key == "adcFast")       readOption<bool>(tempBuffer->adcFast, value);
+      else if (key == "busyLen")       readOption<uint16_t>(tempBuffer->busyLen, value);
+      else if (key == "adcDelay")      readOption<uint16_t>(tempBuffer->adcDelay, value);
+      else if (key == "ideTest")       readOption<bool>(tempBuffer->ideTest, value);
+    }
   }
 
   cout << linesRead << " lines." << endl;
-
   return linesRead;
-
 }

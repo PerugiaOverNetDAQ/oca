@@ -29,78 +29,54 @@ void daqConfig::openInputFile(const string& filePath, ifstream& inFile)
 int daqConfig::config(istream& is)
 {
   int linesRead = 0;
-  int wordsRead = 0;
-  bool discardLine;
   
-  //Get a complete line (until \n)
   for (string line; getline(is, line); ) {
-    stringstream ss(line);
-
-    //Check if empty line
-    discardLine = line.length() == 0;
-    //Read line, word by word
-    for (string word; getline(ss, word, ' '); ) {
-      //Ignore comments
-      if ((wordsRead == 0) & (word[0] == '#'))
-      {
-        discardLine = true;
-        break;
-      }
-
-      //Pick the right word
-      switch(wordsRead){
-        case 0:
-          readOption<bool>(conf.listenClient, word);
-          break;
-        case 1:
-          readOption<int>(conf.portClient, word);
-          break;
-        case 2:
-          readOption<int>(conf.clientCmdLen, word);
-          break;
-        case 3:
-          readOption<string>(conf.makaIpAddr, word);
-          break;
-        case 4:
-          readOption<int>(conf.makaPort, word);
-          break;
-        case 5:
-          readOption<int>(conf.makaCmdLen, word);
-          break;
-        case 6:
-          readOption<string>(conf.dataFolder, word);
-          break;
-        case 7:
-          readOption<bool>(conf.calMode, word);
-          break;
-        case 8:
-          readOption<bool>(conf.intTrigEn, word);
-          break;
-        case 9:
-          readOption<bool>(conf.makaSendToFile, word);
-          break;
-        case 10:
-          readOption<bool>(conf.makaSendToOm, word);
-          break;
-        case 11:
-          readOption<uint32_t>(conf.makaOmPreScale, word);
-          break;
-        default:
-          cout << __METHOD_NAME__ << ") Too many columns in config file." << endl;
-          exit(1);
-      }
-
-      wordsRead++;
-    }
-    //Discard empty or comment lines
-    if (discardLine) continue;
-    
-    wordsRead = 0;
     linesRead++;
+
+    while (line.length() > 0 && (line[line.length() - 1] == '\r' || line[line.length() - 1] == '\n')) {
+      line.erase(line.length() - 1, 1);
+    }
+
+    if (line.empty() || line[0] == '#' || line[0] == ';' || line[0] == '[') {
+      continue;
+    }
+
+    size_t pos = line.find('=');
+    if (pos == string::npos) {
+      continue;
+    }
+
+    string key = line.substr(0, pos);
+    string value = line.substr(pos + 1);
+
+    while (key.length() > 0 && (key[key.length() - 1] == ' ' || key[key.length() - 1] == '\t')) {
+      key.erase(key.length() - 1, 1);
+    }
+    while (key.length() > 0 && (key[0] == ' ' || key[0] == '\t')) {
+      key.erase(0, 1);
+    }
+    while (value.length() > 0 && (value[value.length() - 1] == ' ' || value[value.length() - 1] == '\t')) {
+      value.erase(value.length() - 1, 1);
+    }
+    while (value.length() > 0 && (value[0] == ' ' || value[0] == '\t')) {
+      value.erase(0, 1);
+    }
+
+    if (key == "oca_ip" || key == "makaIpAddr")           readOption<string>(conf.makaIpAddr, value);
+    else if (key == "maka_dir" || key == "dataFolder")     readOption<string>(conf.dataFolder, value);
+    else if (key == "write_file" || key == "makaSendToFile") readOption<bool>(conf.makaSendToFile, value);
+    else if (key == "send_om" || key == "makaSendToOm")     readOption<bool>(conf.makaSendToOm, value);
+    else if (key == "om_prescaler" || key == "makaOmPreScale") readOption<uint32_t>(conf.makaOmPreScale, value);
+    else if (key == "listenClient")  readOption<bool>(conf.listenClient, value);
+    else if (key == "portClient")    readOption<int>(conf.portClient, value);
+    else if (key == "clientCmdLen")  readOption<int>(conf.clientCmdLen, value);
+    else if (key == "makaPort")      readOption<int>(conf.makaPort, value);
+    else if (key == "makaCmdLen")    readOption<int>(conf.makaCmdLen, value);
+    else if (key == "calMode")       readOption<bool>(conf.calMode, value);
+    else if (key == "intTrigEn")     readOption<bool>(conf.intTrigEn, value);
   }
 
   cout << linesRead << " line(s)." << endl;
-
+  conf.dump();
   return linesRead;
-
 }
