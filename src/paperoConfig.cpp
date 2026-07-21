@@ -54,10 +54,14 @@ int paperoConfig::config(istream& is)
   int linesRead = 0;
   int wordsRead = 0;
   bool discardLine;
-  
+
   //Get a complete line (until \n)
   for (string line; getline(is, line); ) {
-    configParams* tempBuffer = new configParams;
+    configParams* tempBuffer = new configParams{};
+    // Def REG0 
+    tempBuffer->daqMode = 0;
+    tempBuffer->lth = 0x0030;
+    tempBuffer->hth = 0x0070;
     stringstream ss(line);
 
     //Check if empty line
@@ -136,6 +140,16 @@ int paperoConfig::config(istream& is)
         case 20:
           readOption<uint16_t>(tempBuffer->chTest, word);
           break;
+        // Optional trailing PAPERO command fields (DAQ mode, REG11 low/high).
+        case 21:
+          readOption<uint32_t>(tempBuffer->daqMode, word);
+          break;
+        case 22:
+          readOption<uint16_t>(tempBuffer->lth, word);
+          break;
+        case 23:
+          readOption<uint16_t>(tempBuffer->hth, word);
+          break;
         default:
           cout << __METHOD_NAME__ << ") Too many columns in config file." << endl;
           exit(1);
@@ -148,7 +162,7 @@ int paperoConfig::config(istream& is)
 
     //Add the temporary buffer to the output map
     conf.push_back(tempBuffer);
-    
+
     wordsRead = 0;
     linesRead++;
   }

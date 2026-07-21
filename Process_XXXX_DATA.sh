@@ -19,12 +19,12 @@ calibPath=$rawPath"/calibration"
 LAST_CAL="SCD_RUN00021_CAL_"$1
 echo "Last calibration: "$LAST_CAL
 
-LAST_BEAM="SCD_RUN00021_BEAM_"$2
-echo "Last Beam data: "$LAST_BEAM
+# Files produced by the explicit `startOCA daq ...` command carry DAQ here.
+LAST_BEAM="SCD_RUN00021_DAQ_"$2
+echo "Last DAQ data: "$LAST_BEAM
 
-CAL_NAME_ROOTFILE=${LAST_CAL:18:19}
-
-BEAM_NUM=${LAST_BEAM:18:19}
+CAL_NAME_ROOTFILE=${LAST_CAL#*_CAL_}
+BEAM_NUM=${LAST_BEAM#*_DAQ_}
 
 #Delete calibration files
 rm -vf $calibPath/$CAL_NAME_ROOTFILE*

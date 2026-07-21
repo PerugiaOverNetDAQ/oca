@@ -2,6 +2,22 @@
 #include "utility.h"
 #include <unistd.h>
 
+namespace {
+// PAPERO REG0 command layout.  The DAQ mode occupies REG0[25:24]; thresholds
+// travel separately in REG11 and are sampled on the RUN_REQUEST rising edge.
+constexpr uint32_t kRunRequestMask = 1u << 4;
+constexpr uint32_t kEventEnableMask = 1u << 16;
+constexpr uint32_t kForceCalibrationMask = 1u << 17;
+constexpr uint32_t kThresholdValidMask = 1u << 18;
+constexpr uint32_t kAutoCalibrationMask = 1u << 19;
+constexpr uint32_t kSaveCalibrationMask = 1u << 20;
+constexpr uint32_t kDaqModeShift = 24;
+// FPGA readback registers are exposed by the HPS driver with an offset of 16.
+constexpr int kCalibrationStatusRegister = 27;
+constexpr uint32_t kCalibrationValidMask = 1u << 0;
+constexpr uint32_t kRunIdleMask = 1u << 1;
+}
+
 uint32_t okVal = 0xb01af1ca;
 uint32_t badVal = 0x000cacca;
 
@@ -30,6 +46,15 @@ de10_silicon_base::de10_silicon_base(std::string address, uint32_t port, paperoC
   adcDelay      = (uint32_t)params->adcDelay & 0x0000FFFF;
   ideTest       = (uint32_t)params->ideTest & 0x00000001;
   chTest        = (uint32_t)params->chTest & 0x000000FF;
+  daqMode       = params->daqMode & 0x00000003; // REG0[25:24].
+  lth           = params->lth & 0x0000FFFF;     // REG11[15:0].
+  hth           = params->hth & 0x0000FFFF;     // REG11[31:16].
+  // Initial state is either the historical CAL-only or event-only mode.  The
+  // DAQ server overrides this explicitly for every received run command.
+  eventEnable   = calEn == 0 ? 1 : 0;
+  autoCalib     = 0;
+  saveCalib     = calEn == 1 ? 1 : 0;
+  applyThresholds = 1;
 
   //Send command length and set it with the loopback value
   //Cannot use specific function since it is the first time setting the length
@@ -182,14 +207,36 @@ int de10_silicon_base::SetTrig2Hold(uint32_t delayIn){
 
 int de10_silicon_base::SetMode(uint8_t modeIn) {
   int ret=0;
-  mode=(modeIn << 4)&0x00000010;
-  if (SendCmd("setMode")==0) {
-    SendInt(mode);
+  if (modeIn == 0) {
+    // Clearing REG0 terminates whichever command was latched at START.
+    mode = 0;
+    if (SendCmd("stopAcquisition")!=0) {
+      ret = 1;
+    }
   }
   else {
-    ret = 1;
+    // CAL and EVENT_ENABLE are independent: CAL=1/EVENT=1 implements run MIX.
+    // DAQ mode affects normal events only; PAPERO forces the calibration tables
+    // through the LadderWrapper RAW path while calibration is active.
+    const uint32_t thresholds = (hth << 16) | lth;
+    mode = kRunRequestMask |
+           (eventEnable == 1 ? kEventEnableMask : 0) |
+           (calEn == 1 ? kForceCalibrationMask : 0) |
+           (applyThresholds == 1 ? kThresholdValidMask : 0) |
+           (autoCalib == 1 ? kAutoCalibrationMask : 0) |
+           (saveCalib == 1 ? kSaveCalibrationMask : 0) |
+           (daqMode << kDaqModeShift);
+
+    // HPS writes REG11 before REG0 so PAPERO cannot latch stale thresholds.
+    if (SendCmd("startAcquisition")==0) {
+      SendInt(thresholds);
+      SendInt(mode);
+    }
+    else {
+      ret = 1;
+    }
   }
-  
+
   ret += checkReply("Setting Mode");
   return ret;
 }
@@ -217,8 +264,30 @@ int de10_silicon_base::EventReset() {
   int ret = 0;
   if (SendCmd("eventReset")!=0) ret = 1;
   
-  ret += checkReply("Resetting events (reinitialize)");
+  ret += checkReply("Resetting event counters");
 
+  return ret;
+}
+
+int de10_silicon_base::GetCalibrationValid(bool& valid) {
+  uint32_t status = 0;
+  const int ret = readReg(kCalibrationStatusRegister, status);
+  valid = ret == 0 && (status & kCalibrationValidMask) != 0u;
+  if (verbosity > 0) {
+    printf("%s) CAL_VALID=%u (status=%08x)\n", __METHOD_NAME__,
+           valid ? 1u : 0u, status);
+  }
+  return ret;
+}
+
+int de10_silicon_base::GetRunIdle(bool& idle) {
+  uint32_t status = 0;
+  const int ret = readReg(kCalibrationStatusRegister, status);
+  idle = ret == 0 && (status & kRunIdleMask) != 0u;
+  if (verbosity > 1) {
+    printf("%s) RUN_IDLE=%u (status=%08x)\n", __METHOD_NAME__,
+           idle ? 1u : 0u, status);
+  }
   return ret;
 }
 
@@ -249,7 +318,9 @@ int de10_silicon_base::GetEvent(std::vector<uint32_t>& evt, uint32_t& evtLen){
   return evtRead;
 }
 
-//TO DO: there will be another method, in future to really calibrate: put in cal mode, start the trigger, stop the calibration and let the system compute pedestals, sigmas, etc...
+// Cache the calibration request used by the next REG0 command and keep the
+// historical TRIGBUSY calibration bit synchronized for compatible firmware.
+// The actual calibration sequence starts later, atomically, in SetMode(1).
 int de10_silicon_base::SetCalibrationMode(uint32_t calEnIn){
   int ret = 0;
   calEn = calEnIn & 0x00000001;

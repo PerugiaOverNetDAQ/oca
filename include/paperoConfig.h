@@ -56,6 +56,9 @@ class paperoConfig
       uint16_t adcDelay; //!ADC delay (in clock cycles)
       bool ideTest; //!Test port of IDE1140
       uint16_t chTest; //!IDE1140 channel connected to CAL port
+      uint32_t daqMode; //!Normal-event format: 0 Legacy, 1 Raw, 2 Compressed, 3 Mixed
+      uint16_t lth; //!Low clustering threshold loaded in REG11[15:0]
+      uint16_t hth; //!High clustering threshold loaded in REG11[31:16]
 
       void dump()
       {
@@ -80,6 +83,9 @@ class paperoConfig
         cout << "ADC delay:            " << adcDelay << endl;
         cout << "IDE1140 Test Port:    " << ideTest << endl;
         cout << "IDE1140 Channel Test: " << chTest << endl;
+        cout << "DAQ Mode:             " << daqMode << endl;
+        cout << "Low Threshold:        " << lth << endl;
+        cout << "High Threshold:       " << hth << endl;
       }
     };
 

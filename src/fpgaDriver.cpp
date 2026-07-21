@@ -186,6 +186,11 @@ void fpgaDriver::ResetFpga(){
 	SingleWriteReg((uint32_t)rGOTO_STATE, 0x00000000);
 }
 
+void fpgaDriver::ResetCounters(){
+  SingleWriteReg((uint32_t)rGOTO_STATE, REG0_COUNTER_RESET_MASK);
+  SingleWriteReg((uint32_t)rGOTO_STATE, 0x00000000);
+}
+
 void fpgaDriver::InitFpga(uint32_t* regsContentIn, uint32_t opLen){
   //Configure the whole regArray (except register rGOTO_STATE)
   WriteReg(regsContentIn, opLen);
@@ -205,12 +210,38 @@ void fpgaDriver::SetMode(uint32_t modeIn){
   SingleWriteReg(rGOTO_STATE, modeIn);
 }
 
+void fpgaDriver::StartAcquisition(uint32_t command, uint32_t thresholds){
+  if ((command & REG0_THRESHOLD_VALID_MASK) != 0u) {
+    // PAPERO samples REG11 and all REG0 fields on RUN_REQUEST rising edge.
+    // Keep both writes ordered, thresholds before the command that validates them.
+    uint32_t runConfig[4] = {
+      thresholds,
+      rTHR_PARAM,
+      command | REG0_RUN_REQUEST_MASK,
+      rGOTO_STATE
+    };
+    WriteReg(runConfig, 4);
+  }
+  else {
+    // Standalone DUMP is read-only: do not even rewrite the threshold config
+    // register when THR_VALID is absent.
+    SingleWriteReg(rGOTO_STATE, command | REG0_RUN_REQUEST_MASK);
+  }
+}
+
+void fpgaDriver::StopAcquisition(){
+  SingleWriteReg(rGOTO_STATE, 0x00000000);
+}
+
 void fpgaDriver::GetEventNumber(uint32_t* extTrigCount, uint32_t* intTrigCount){
 	ReadReg(rEXT_TRG_COUNT, extTrigCount);
 	ReadReg(rINT_TRG_COUNT, intTrigCount);
 }
 
 void fpgaDriver::Calibrate(uint32_t calibIn){
+	// Compatibility bit in rTRIGBUSY_LOGIC.  New PAPERO firmware starts the
+	// calibration state machine from REG0.FORCE_CALIB/AUTO_CALIB in
+	// StartAcquisition(). 
 	uint32_t regContent;
 	ReadReg(rTRIGBUSY_LOGIC, &regContent);
 	regContent = (regContent & 0xFFFFFFFD) | (calibIn & 0x00000002);
@@ -225,6 +256,8 @@ void fpgaDriver::intTriggerPeriod(uint32_t periodIn){
 }
 
 void fpgaDriver::selectTrigger(uint32_t intTrigIn){
+	// Trigger source remains an rTRIGBUSY_LOGIC setting.  Every CAL/DAQ/MIX
+	// command may select it independently (1 internal here, 0 external).
 	uint32_t regContent;
 	ReadReg(rTRIGBUSY_LOGIC, &regContent);
 	regContent = (regContent & 0xFFFFFFFE) | (intTrigIn & 0x00000001);

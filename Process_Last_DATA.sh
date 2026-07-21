@@ -10,12 +10,15 @@ calibPath=$rawPath"/calibration"
 LAST_CAL=`ls -lrths /media/footpg-daq/datapartition/202209_PAN_data | grep "CAL" | awk '{print $10}' | tail -1 | sed 's/.dat//'`
 echo "Last calibration: "$LAST_CAL
 
-LAST_BEAM=`ls -lrths /media/footpg-daq/datapartition/202209_PAN_data | grep "BEAM" | awk '{print $10}' | tail -1 | sed 's/.dat//'`
-echo "Last Beam data: "$LAST_BEAM
+# New runs use the DAQ label; retain BEAM in the search for older files.
+LAST_BEAM=`ls -lrths /media/footpg-daq/datapartition/202209_PAN_data | grep -E "DAQ|BEAM" | awk '{print $10}' | tail -1 | sed 's/.dat//'`
+echo "Last DAQ data: "$LAST_BEAM
 
-CAL_NAME_ROOTFILE=${LAST_CAL:18:19}
-
-BEAM_NUM=${LAST_BEAM:18:19}
+# Strip the semantic prefix instead of using a fixed byte offset: DAQ is one
+# character shorter than the historical BEAM label.
+CAL_NAME_ROOTFILE=${LAST_CAL#*_CAL_}
+BEAM_NUM=${LAST_BEAM#*_DAQ_}
+BEAM_NUM=${BEAM_NUM#*_BEAM_}
 
 #Delete calibration files
 #rm -vf $calibPath/$CAL_NAME_ROOTFILE*

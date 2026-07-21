@@ -26,25 +26,28 @@ endif
 
 UNAME_S := $(shell uname -s)
 
-CROSS_COMPILE = arm-linux-gnueabihf
-CCARM = $(CROSS_COMPILE)-g++
-LDARM = $(CROSS_COMPILE)-g++
+# Defaults for the historical DE10 cross-build environment.  All three paths
+# remain overridable on the make command line for another toolchain/layout.
+CROSS_TOOLCHAIN ?= $(HOME)/INFN/cross-comp/gcc-linaro-6.2.1-2016.11-x86_64_arm-linux-gnueabihf
+CROSS_COMPILE ?= $(CROSS_TOOLCHAIN)/bin/arm-linux-gnueabihf
+CCARM ?= $(CROSS_COMPILE)-g++
+LDARM ?= $(CROSS_COMPILE)-g++
 
-# Root specific (unused for now):
+# Add ROOT flags only when a ROOT installation is explicitly available.
 ifdef ROOTSYS
-	ROOTCFLAGS    =
-	ROOTLIBS      =
-	ROOTGLIBS     =
-else
 	ROOTCFLAGS    = $(shell root-config --cflags)
 	ROOTLIBS      = $(shell root-config --libs)
 	ROOTGLIBS     = $(shell root-config --glibs)
+else
+	ROOTCFLAGS    =
+	ROOTLIBS      =
+	ROOTGLIBS     =
 endif
 
-# DE10 specific:
+# Cyclone-V headers used only by the ARM/PAPERO target; HWLIBS_ROOT may point
+# either at Intel SoC EDS or at a standalone copy of the hwlib tree.
 ALT_DEVICE_FAMILY ?= soc_cv_av
-#SOCEDS_DEST_ROOT = /home/depa/intelFPGA/20.1/embedded
-HWLIBS_ROOT = $(SOCEDS_DEST_ROOT)/ip/altera/hps/altera_hps/hwlib
+HWLIBS_ROOT ?= $(HOME)/INFN/cross-comp/intel-socfpga-hwlib/armv7a/hwlib
 
 # Flags and includes:
 INCLUDE := -I$(INC)
@@ -85,7 +88,12 @@ OCASTOP := $(EXE)/stopOCA
 MAKA := $(EXE)/MAKA
 
 # Rules:
-all: clean $(OCADAQ) $(OCATEST) $(MAKA) $(PAPERO) $(OCASTART) $(OCASTOP) $(PAPERO)
+# Keep normal builds incremental.  In particular, never make a clean target a
+# prerequisite of a build target: with parallel make it may delete outputs
+# while they are being produced.
+all: host papero
+
+host: oca maka startstop
 
 oca: $(OCADAQ) $(OCATEST)
 
@@ -93,7 +101,18 @@ maka: $(MAKA)
 
 startstop : $(OCASTART) $(OCASTOP)
 
-papero: cleanpapero $(PAPERO)
+papero: $(PAPERO)
+
+checkhpsenv:
+	@test -x "$(CCARM)" || { \
+		echo "Missing ARM compiler: $(CCARM)" >&2; exit 1; \
+	}
+	@test -f "$(HWLIBS_ROOT)/include/$(ALT_DEVICE_FAMILY)/socal/socal.h" || { \
+		echo "Missing Cyclone V HWLib under: $(HWLIBS_ROOT)" >&2; exit 1; \
+	}
+	@echo "ARM cross-build environment: OK"
+
+$(OBJECTSHPS): | checkhpsenv
 
 $(OCADAQ): $(OBJECTS)
 	@echo Linking $^ to $@
@@ -129,6 +148,10 @@ $(OCASTOP): $(OBJECTSSTOP)
 	@mkdir -pv $(BIN)
 	$(CXX) $(CPPFLAGS) $^ -o $@ $(ROOTGLIBS)
 	@cp -v $(OCASTOP) $(BIN)/	
+
+# Both ends of the START protocol include this header.  An explicit dependency
+# prevents an incremental build from leaving client and server on old bit maps.
+$(OBJ)/mainstart.o $(OBJ)/daqserver.o: $(INC)/runControl.h
 
 $(PAPERO): $(OBJECTSHPS)
 ifeq ($(UNAME_S),Darwin)
@@ -186,4 +209,4 @@ cleanpapero:
 	@$(RM) -Rfv $(PAPERO)
 
 
-.PHONY: clean cleanoca cleanpapero cleanmaka
+.PHONY: all host oca maka startstop papero clean cleanoca cleanpapero cleanmaka checkhpsenv

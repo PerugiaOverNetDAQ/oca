@@ -19,6 +19,7 @@
 #define rADC_CLK_PARAM    6
 #define rMSD_PARAM        7
 #define rBUSYADC_PARAM    8
+#define rTHR_PARAM        11
 #define rGW_VER           16
 #define rINT_TS_MSB       17
 #define rINT_TS_LSB       18
@@ -29,7 +30,18 @@
 #define rEXT_TRG_COUNT    23
 #define rINT_TRG_COUNT    24
 #define rFDI_FIFO_NUMWORD 25
+#define rCALIB_STATUS     27
 #define rPIUMONE          31
+
+// REG0 bits shared with paperoPackage.vhd.  REG0 is a level-sensitive command:
+// PAPERO latches the remaining fields on RUN_REQUEST 0->1 and stops on 1->0.
+#define REG0_COUNTER_RESET_MASK  (1u << 1)
+#define REG0_RUN_REQUEST_MASK    (1u << 4)
+#define REG0_THRESHOLD_VALID_MASK (1u << 18)
+
+// rCALIB_STATUS fields (FPGA readback register 11 + HPS offset 16).
+#define CALIB_STATUS_VALID_MASK   (1u << 0)
+#define CALIB_STATUS_RUN_IDLE_MASK (1u << 1)
 
 #include <inttypes.h>
 #include <vector>
@@ -89,6 +101,9 @@ class fpgaDriver {
 
     //!< Reset the FPGA modules
     void ResetFpga();
+
+    //!< Reset only acquisition counters; do not flush transport or calibration data
+    void ResetCounters();
     
     //!< Initialize the register array and reset the FPGA modules
     void InitFpga(uint32_t* regsContentIn, uint32_t opLen);
@@ -100,12 +115,19 @@ class fpgaDriver {
     
     //!< Configure the FPGA mode: Stop (0), Run (1)
     void SetMode(uint32_t modeIn);
+
+    /*!< Write REG11 first, then assert REG0.RUN_REQUEST with the complete
+         command in the same ordered configuration-FIFO transaction. */
+    void StartAcquisition(uint32_t command, uint32_t thresholds);
+
+    //!< Clear REG0, producing the RUN_REQUEST falling edge that stops the command.
+    void StopAcquisition();
     
     //!< Retrieve the internal and external trigger counters
     void GetEventNumber(uint32_t* extTrigCount, uint32_t* intTrigCount);
     
-    //!< Alias of ResetFpga
-    void EventReset(){ResetFpga();};
+    //!< Reset event counters without resetting calibration memories
+    void EventReset(){ResetCounters();};
     
     //!< Activate the calibration mode
     void Calibrate(uint32_t calibIn);

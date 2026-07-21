@@ -43,9 +43,17 @@ int main(int argc, char *argv[]) {
   daq->Send((void*)stop, 4*sizeof(uint32_t));
   uint32_t nEvts = 0;
   daq->ReceiveInt(nEvts);
-  printf("%s)        Events: %d \n", __METHOD_NAME__, nEvts);
   daq->ReceiveCmdReply(readBack);//is blocking and this is wanted
   hex2string(readBack,length,command_string);
+
+  // The server preserves the historical count-then-reply wire order even
+  // when RUN_IDLE cannot be proven.  UINT32_MAX marks that fail-safe path.
+  if (nEvts == 0xffffffffu) {
+    fprintf(stderr, "%s) Stop failed: %s\n", __METHOD_NAME__, command_string);
+    return 1;
+  }
+
+  printf("%s)        Events: %d \n", __METHOD_NAME__, nEvts);
   printf("%s) Read from DAQ: %s\n", __METHOD_NAME__, command_string);
   
   return 0;

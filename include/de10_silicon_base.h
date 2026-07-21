@@ -35,6 +35,15 @@ private:
   uint32_t adcDelay;
   uint32_t ideTest;
   uint32_t chTest;
+  uint32_t daqMode;
+  uint32_t lth;
+  uint32_t hth;
+  // Run-policy bits are cached independently and written together in
+  // REG0, so PAPERO observes one atomic command at RUN_REQUEST rising edge.
+  uint32_t eventEnable;
+  uint32_t autoCalib;
+  uint32_t saveCalib;
+  uint32_t applyThresholds;
 
   /*
     Check if detector performed the required actions of the command sent
@@ -59,9 +68,21 @@ public:
   int SetMode(uint8_t modeIn);
   int GetEventNumber();
   int EventReset();
+  //!< Read PAPERO's sticky calibration-valid flag (FPGA readback register 11).
+  int GetCalibrationValid(bool& valid);
+  //!< Read the fully-drained STOP acknowledgement from the same status word.
+  int GetRunIdle(bool& idle);
   void AskEvent();
   int GetEvent(std::vector<uint32_t>& evt, uint32_t& evtLen);
   int SetCalibrationMode(uint32_t calEnIn);
+  //!< Cache the REG0 EVENT_ENABLE bit; it is sent atomically by SetMode(1).
+  void SetEventEnable(uint32_t eventEnIn){ eventEnable = eventEnIn & 0x00000001; }
+  //!< Let DAQ reuse valid RAMs and calibrate automatically only if invalid.
+  void SetAutoCalibration(uint32_t autoCalibIn){ autoCalib = autoCalibIn & 0x00000001; }
+  //!< Control calibration-table serialization without changing RAM validity.
+  void SetSaveCalibration(uint32_t saveCalibIn){ saveCalib = saveCalibIn & 0x00000001; }
+  //!< Apply config LTH/HTH once at START; disabled for read-only DUMP.
+  void SetApplyThresholds(uint32_t enable){ applyThresholds = enable & 0x00000001; }
   int WriteCalibPar();
   int SaveCalibrations();
   int SetIntTriggerPeriod(uint32_t intTrigPeriodIn);
