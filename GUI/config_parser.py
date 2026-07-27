@@ -9,7 +9,6 @@ DEFAULT_PAPERO_PATH = str(ROOT_DIR / "config" / "papero.cfg")
 
 def get_config_parser():
     parser = configparser.ConfigParser()
-    # .optionxform=str impedisce la conversione automatica in minuscolo
     parser.optionxform = str
     return parser
 
@@ -23,16 +22,13 @@ def load_oca_config(filepath=DEFAULT_OCA_PATH):
 
     config = get_config_parser()  
 
-    # Definiamo i valori di default
     data = {
-        # Campi gestiti dalla GUI
         "oca_ip": "",
         "maka_dir": "",
         "write_file": False,
         "send_om": False,
         "om_prescaler": 0,
         
-        # Campi EXTRA allineati
         "listenClient": False,
         "portClient": 0,
         "clientCmdLen": 0,
@@ -42,23 +38,19 @@ def load_oca_config(filepath=DEFAULT_OCA_PATH):
         "intTrigEn": False
     }
     
-    # Controllo di sicurezza
     if not os.path.exists(filepath):
         return data  
         
     try:
-        # Legge il file. configparser decodifica automaticamente la struttura INI
         config.read(filepath)
         if "GLOBAL" in config:
             sec = config["GLOBAL"]
-            # Lettura campi GUI (con supporto al doppio nome per compatibilità)
             data["oca_ip"] = sec.get("oca_ip", sec.get("makaIpAddr", ""))
             data["maka_dir"] = sec.get("maka_dir", sec.get("dataFolder", ""))
             data["write_file"] = sec.getboolean("write_file", sec.getboolean("makaSendToFile", False))
             data["send_om"] = sec.getboolean("send_om", sec.getboolean("makaSendToOm", False))
             data["om_prescaler"] = sec.getint("om_prescaler", sec.getint("makaOmPreScale", 0))
             
-            # Lettura campi EXTRA
             data["listenClient"] = sec.getboolean("listenClient", False)
             data["portClient"] = sec.getint("portClient", 0)
             data["clientCmdLen"] = sec.getint("clientCmdLen", 0)
@@ -82,17 +74,13 @@ def save_oca_config(data, filepath=DEFAULT_OCA_PATH):
         
     config = get_config_parser() 
 
-    # Crea la sezione [GLOBAL] dei file INI
-    # Scriviamo TUTTI i 12 parametri nel file .cfg
     config["GLOBAL"] = {
-        # Se presenti nel dizionario 'data' usa quelli della GUI, altrimenti usa i default
         "oca_ip": str(data.get("oca_ip", "")),
         "maka_dir": str(data.get("maka_dir", "")),
         "write_file": str(data.get("write_file", False)),
         "send_om": str(data.get("send_om", False)),
         "om_prescaler": str(data.get("om_prescaler", 0)),
         
-        # Parametri aggiuntivi compilati in automatico
         "listenClient": str(data.get("listenClient", False)),
         "portClient": str(data.get("portClient", 0)),
         "clientCmdLen": str(data.get("clientCmdLen", 0)),
@@ -114,11 +102,9 @@ def load_papero_config(filepath=DEFAULT_PAPERO_PATH):
 
     for i in range(10):
         data.append({
-            # Campi della GUI
             "enable": False, "ip": "", "send_maka": False, "trigger": 0, "test_mode": False, "test_channel": 0,
             "bias0": 0.0, "bias1": 0.0, 
             
-            # Campi EXTRA allineati 
             "id": i + 1, "tcpPort": 0, "cmdLen": 0, "testUnitCfg": 0,
             "hkEn": False, "dataEn": False, "pktLen": 0, "feClkDiv": 0,
             "feClkDuty": 0, "adcClkDiv": 0, "adcClkDuty": 0, "trig2Hold": 0,
@@ -134,7 +120,6 @@ def load_papero_config(filepath=DEFAULT_PAPERO_PATH):
             section_name = f"PAPERO_{i+1}"
             if section_name in config:
                 sec = config[section_name]
-                # Campi GUI
                 data[i]["enable"] = sec.getboolean("enable", sec.getboolean("makaEnable", False))
                 data[i]["ip"] = sec.get("ip", sec.get("ipAddr", ""))
                 data[i]["send_maka"] = sec.getboolean("send_maka", False)
@@ -144,7 +129,6 @@ def load_papero_config(filepath=DEFAULT_PAPERO_PATH):
                 data[i]["bias0"] = sec.getfloat("bias0", 0.0)
                 data[i]["bias1"] = sec.getfloat("bias1", 0.0)
                 
-                # Campi EXTRA
                 data[i]["id"] = sec.getint("id", i + 1)
                 data[i]["tcpPort"] = sec.getint("tcpPort", 0)
                 data[i]["cmdLen"] = sec.getint("cmdLen", 0)
@@ -179,7 +163,6 @@ def save_papero_config(data_list, filepath=DEFAULT_PAPERO_PATH):
     for i, data in enumerate(data_list):
         section_name = f"PAPERO_{i+1}"
         config[section_name] = {
-            # Campi gestiti dalla GUI
             "enable": str(data.get("enable", False)),
             "ip": str(data.get("ip", "")),
             "trigger": str(data.get("trigger", 0)),
@@ -188,7 +171,6 @@ def save_papero_config(data_list, filepath=DEFAULT_PAPERO_PATH):
             "bias0": str(data.get("bias0", 0.0)),
             "bias1": str(data.get("bias1", 0.0)),
             
-            # Campi EXTRA richiesti generati in automatico
             "id": str(data.get("id", i + 1)),
             "tcpPort": str(data.get("tcpPort", 0)),
             "cmdLen": str(data.get("cmdLen", 0)),
