@@ -27,7 +27,8 @@ private:
   volatile bool kStart; //!< Start event recording
   std::thread _3d;//!< Thread handle
   int calibmode;  //!< Calibration enable
-  int mode;       //!< '1': Run, '0': Stop
+  uint32_t mode;  //!< Complete PAPERO register-0 command word
+  uint32_t runCommand; //!< Command selected for the current run type
   int trigtype;   //!< Trigger Type: if '1', internal
   unsigned int nEvents = 0; //!< Acquired event number
   paperoConfig::vectorParam paperoConfVector; //!< Papero configuration vector
@@ -77,6 +78,7 @@ public:
 
   void SetCalibrationMode(uint32_t mode);
   void SetMode(uint8_t mode);
+  void SetRunCommand(uint32_t command);
   void SelectTrigger(uint32_t trig);
 
   void SetFeClk(uint32_t _feClkDuty, uint32_t _feClkDiv);
@@ -99,6 +101,7 @@ public:
     Update a single register with a mask to all detectors
   */
   int updateReg(uint32_t regAddr, uint32_t regCont, uint32_t mask);
+  bool WaitForRunIdle(uint32_t timeoutMs = 10000);
   int Init();
   void Start(char* runtype, uint32_t runnum, uint32_t unixtime);
   void Stop(uint32_t& _nEvts);

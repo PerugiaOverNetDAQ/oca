@@ -60,6 +60,7 @@ public:
   int updateReg(int regAddr, uint32_t regCont, uint32_t mask);
   int Init();
   int SetTrig2Hold(uint32_t delayIn);
+  int SetRunCommand(uint32_t commandIn);
   int SetMode(uint8_t modeIn);
   int GetEventNumber();
   int EventReset();

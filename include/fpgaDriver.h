@@ -31,6 +31,7 @@
 #define rINT_TRG_COUNT    24
 #define rFDI_FIFO_NUMWORD 25
 #define rBIAS_CURR_MON    26
+#define rCALIB_STATUS     27
 #define rPIUMONE          31
 
 #include <inttypes.h>

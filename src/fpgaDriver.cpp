@@ -16,6 +16,7 @@
 #include "utility.h"
 #include "fpgaDriver.h"
 #include "axiFifo.h"
+#include "paperoProtocol.h"
 
 
 fpgaDriver::fpgaDriver(int verbose){
@@ -51,7 +52,9 @@ fpgaDriver::fpgaDriver(int verbose){
   hkFifo = new axiFifo(virtualBase, FIFO_FPGA_TO_HPS_OUT_BASE,
                         FIFO_FPGA_TO_HPS_OUT_CSR_BASE, 3, 1000, 0);
   dataFifo = new axiFifo(virtualBase, FAST_FIFO_FPGA_TO_HPS_OUT_BASE,
-                          FAST_FIFO_FPGA_TO_HPS_OUT_CSR_BASE, 902, 3186, 0);
+                          FAST_FIFO_FPGA_TO_HPS_OUT_CSR_BASE,
+                          paperoProtocol::kFastFifoAlmostEmpty,
+                          paperoProtocol::kFastFifoAlmostFull, 0);
 
   if (kVerbose > 3) {
     printf("FIFO Status post init:\n");

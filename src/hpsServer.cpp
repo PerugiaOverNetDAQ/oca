@@ -127,7 +127,7 @@ void hpsServer::ProcessCmdReceived(char* msg){
     cmdReply("writeReg");
     uint32_t regContent = 0;
     uint32_t regAddr = 0;
-    int ret = 1;
+    int ret = 0;
 
     Rx(&regAddr, sizeof(regAddr));
     Rx(&regContent, sizeof(regContent));

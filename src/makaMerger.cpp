@@ -5,6 +5,7 @@
 */
 
 #include "makaMerger.h"
+#include "paperoProtocol.h"
 #include "utility.h"
 
 makaMerger::makaMerger(int port, int verb, bool _net):tcpServer(port, verb){
@@ -223,13 +224,14 @@ int makaMerger::collector(FILE* _dataFile){
   //std::vector<uint32_t*> evts(det.size(), "");
   uint32_t evtLen = 0;
   uint32_t evtLen_tot = 0;
-  std::vector<uint32_t> evt(908);
+  std::vector<uint32_t> evt(paperoProtocol::kHefPacketWords);
 
   // FIX ME: at most 64 detectors
   std::bitset<64> replied{0};
   
   uint32_t evtHeader;
-  uint32_t evtLenHeader = sizeof(uint32_t)*(kDet.size() * 907 + 3);
+  uint32_t evtLenHeader = sizeof(uint32_t) *
+      (kDet.size() * paperoProtocol::kHefPacketWords + 3);
   bool headerWritten = false;
   struct timespec utc_time;
   //long long sec;

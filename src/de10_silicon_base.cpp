@@ -218,9 +218,9 @@ int de10_silicon_base::SetTrig2Hold(uint32_t delayIn){
   return ret;
 }
 
-int de10_silicon_base::SetMode(uint8_t modeIn) {
+int de10_silicon_base::SetRunCommand(uint32_t commandIn) {
   int ret=0;
-  mode=(modeIn << 4)&0x00000010;
+  mode = commandIn;
   if (SendCmd("setMode")==0) {
     SendInt(mode);
   }
@@ -228,8 +228,12 @@ int de10_silicon_base::SetMode(uint8_t modeIn) {
     ret = 1;
   }
   
-  ret += checkReply("Setting Mode");
+  ret += checkReply("Setting run command");
   return ret;
+}
+
+int de10_silicon_base::SetMode(uint8_t modeIn) {
+  return SetRunCommand((static_cast<uint32_t>(modeIn) << 4) & 0x00000010);
 }
 
 int de10_silicon_base::GetEventNumber() {
