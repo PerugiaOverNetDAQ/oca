@@ -37,6 +37,15 @@ private:
   string   bias1;
   uint32_t ideTest;
   uint32_t chTest;
+  uint32_t daqMode;
+  uint32_t lth;
+  uint32_t hth;
+
+  // Run-policy bits are cached and sent atomically on RUN_REQUEST.
+  uint32_t eventEnable;
+  uint32_t autoCalib;
+  uint32_t saveCalib;
+  uint32_t applyThresholds;
 
   /*
     Check if detector performed the required actions of the command sent
@@ -60,13 +69,22 @@ public:
   int updateReg(int regAddr, uint32_t regCont, uint32_t mask);
   int Init();
   int SetTrig2Hold(uint32_t delayIn);
-  int SetRunCommand(uint32_t commandIn);
   int SetMode(uint8_t modeIn);
   int GetEventNumber();
   int EventReset();
+  //!< Read PAPERO's sticky calibration-valid flag.
+  int GetCalibrationValid(bool& valid);
+  //!< Read the fully-drained STOP acknowledgement.
+  int GetRunIdle(bool& idle);
   void AskEvent();
   int GetEvent(std::vector<uint32_t>& evt, uint32_t& evtLen);
   int SetCalibrationMode(uint32_t calEnIn);
+  void SetEventEnable(uint32_t enable){ eventEnable = enable & 1u; }
+  void SetAutoCalibration(uint32_t enable){ autoCalib = enable & 1u; }
+  void SetSaveCalibration(uint32_t enable){ saveCalib = enable & 1u; }
+  void SetApplyThresholds(uint32_t enable){
+    applyThresholds = enable & 1u;
+  }
   int WriteCalibPar();
   int SaveCalibrations();
   int SetIntTriggerPeriod(uint32_t intTrigPeriodIn);

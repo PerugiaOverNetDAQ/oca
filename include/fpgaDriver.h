@@ -20,6 +20,7 @@
 #define rMSD_PARAM        7
 #define rBUSYADC_PARAM    8
 #define rBIAS_PARAM       9
+#define rTHR_PARAM        11
 #define rGW_VER           16
 #define rINT_TS_MSB       17
 #define rINT_TS_LSB       18
@@ -50,6 +51,10 @@ class fpgaDriver {
     uint32_t* raCont; //!< Content of the register array addressed register
     
     uint32_t kGwV; //!< Gateware version
+
+    //!< Partially consumed variable-length packet (SOP and length read).
+    bool dataPacketPending = false;
+    uint32_t dataPacketLength = 0;
 
     //!< Compute the parity of an incoming unsigned 8-bit (gcc specific)
     inline bool Parity8(uint8_t dataIn){
@@ -97,6 +102,9 @@ class fpgaDriver {
 
     //!< Reset the FPGA modules
     void ResetFpga();
+
+    //!< Reset only acquisition counters, preserving calibration memories.
+    void ResetCounters();
     
     //!< Initialize the register array and reset the FPGA modules
     void InitFpga(uint32_t* regsContentIn, uint32_t opLen);
@@ -108,12 +116,19 @@ class fpgaDriver {
     
     //!< Configure the FPGA mode: Stop (0), Run (1)
     void SetMode(uint32_t modeIn);
+
+    /*!< Write REG11 first, then assert REG0.RUN_REQUEST with the complete
+         command in the same ordered configuration-FIFO transaction. */
+    void StartAcquisition(uint32_t command, uint32_t thresholds);
+
+    //!< Clear REG0, producing the RUN_REQUEST falling edge.
+    void StopAcquisition();
     
     //!< Retrieve the internal and external trigger counters
     void GetEventNumber(uint32_t* extTrigCount, uint32_t* intTrigCount);
     
-    //!< Alias of ResetFpga
-    void EventReset(){ResetFpga();};
+    //!< Reset event counters without resetting calibration memories.
+    void EventReset(){ResetCounters();};
     
     //!< Activate the calibration mode
     void Calibrate(uint32_t calibIn);

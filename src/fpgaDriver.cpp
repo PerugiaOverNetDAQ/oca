@@ -182,11 +182,20 @@ void fpgaDriver::ResetFpga(){
 	//Flush the FastData Fifo
 	flushErr = dataFifo->readChunk(data, 0, true);
 	if(kVerbose > 0) printf("%s) Flushed %d words from DATA FIFO\n", __METHOD_NAME__, flushErr);
+  dataPacketPending = false;
+  dataPacketLength = 0;
   flushErr = hkFifo->readChunk(data, 0, true);
 	if(kVerbose > 0) printf("%s) Flushed %d words from HK FIFO\n", __METHOD_NAME__, flushErr);
 
 	//Remove regArray reset
 	SingleWriteReg((uint32_t)rGOTO_STATE, 0x00000000);
+}
+
+void fpgaDriver::ResetCounters(){
+  SingleWriteReg((uint32_t)rGOTO_STATE,
+                 paperoProtocol::kCounterResetBit);
+  SingleWriteReg((uint32_t)rGOTO_STATE,
+                 paperoProtocol::kStopCommand);
 }
 
 void fpgaDriver::InitFpga(uint32_t* regsContentIn, uint32_t opLen){
@@ -206,6 +215,28 @@ void fpgaDriver::SetDelay(uint32_t delayIn){
 
 void fpgaDriver::SetMode(uint32_t modeIn){
   SingleWriteReg(rGOTO_STATE, modeIn);
+}
+
+void fpgaDriver::StartAcquisition(uint32_t command, uint32_t thresholds){
+  if ((command & paperoProtocol::kThresholdBit) != 0u) {
+    // PAPERO samples REG11 together with the other fields on the
+    // REG0.RUN_REQUEST rising edge. Keep both writes in one ordered packet.
+    uint32_t runConfig[4] = {
+      thresholds,
+      rTHR_PARAM,
+      command | paperoProtocol::kRunRequestBit,
+      rGOTO_STATE
+    };
+    WriteReg(runConfig, 4);
+  }
+  else {
+    SingleWriteReg(rGOTO_STATE,
+                   command | paperoProtocol::kRunRequestBit);
+  }
+}
+
+void fpgaDriver::StopAcquisition(){
+  SingleWriteReg(rGOTO_STATE, paperoProtocol::kStopCommand);
 }
 
 void fpgaDriver::GetEventNumber(uint32_t* extTrigCount, uint32_t* intTrigCount){
@@ -349,59 +380,66 @@ void fpgaDriver::biasCurrRead(float& _curr0, float& _curr1, uint8_t& _flags) {
 }
 
 int fpgaDriver::getEvent(std::vector<uint32_t>& evt, int* evtLen){
-  int readErr = 0;
-  uint32_t pktLen = 0;
-  uint32_t sopWord= 0;
+  *evtLen = 0;
 
-  //Check if FIFO has words in it (possibly, a full event)
-  if (dataFifo->getAEmpty()){
-    if (kVerbose > 3) {
-      uint32_t regContent;
-      printf("%s) Fifo A-Empty.\n", __METHOD_NAME__);
-      ReadReg(21, &regContent);
-      printf("Register 21: %08x\n", regContent);
-      ReadReg(22, &regContent);
-      printf("Register 22: %08x\n", regContent);
+  // HEF compressed packets have a variable length.  Consume the two-word
+  // header as soon as it is available, then wait for precisely the advertised
+  // remainder instead of relying on a RAW-packet almost-empty threshold.
+  if (!dataPacketPending) {
+    if (dataFifo->getUsedw() < 2u) {
+      return 0;
+    }
+
+    uint32_t sopWord = 0;
+    uint32_t pktLen = 0;
+    if (dataFifo->read(&sopWord) < 0 || dataFifo->read(&pktLen) < 0) {
+      fprintf(stderr, "Error reading event header\n");
+      return -1;
+    }
+    if (sopWord != DATA_SOP) {
+      fprintf(stderr, "First value of event not SoP: %08x\n", sopWord);
+      return -1;
+    }
+    if (pktLen < 12u ||
+        pktLen > paperoProtocol::kHefMaxPacketLength) {
+      fprintf(stderr, "Invalid HEF packet length: %u\n", pktLen);
+      return -2;
+    }
+
+    dataPacketPending = true;
+    dataPacketLength = pktLen;
+  }
+
+  const uint32_t remainingWords = dataPacketLength - 1u;
+  if (dataFifo->getUsedw() < remainingWords) {
+    if (kVerbose > 4) {
+      printf("%s) Waiting for HEF packet: %u/%u words available\n",
+             __METHOD_NAME__, dataFifo->getUsedw(), remainingWords);
     }
     *evtLen = 0;
     return 0;
   }
 
-  //std::cout << "\rDATA FIFO Not A-Empty" << std::flush;
-  
-  //Read the first word and make sure it's the SoP
-  readErr = dataFifo->read(&sopWord);
-  if(sopWord != DATA_SOP){
-    fprintf(stderr, "First value of event not SoP: %08x\n", sopWord);
-    return -1;
-  }
-
-  //Read the packet length
-  readErr = dataFifo->read(&pktLen);
-  if (kVerbose > 3){
-    printf("%s) PacketLen: %08x\n", __METHOD_NAME__, pktLen);
-  }
-  
-  //Read the rest of the packet
-  uint32_t packet[pktLen + 1];
-  packet[0] = DATA_SOP;
-  packet[1] = pktLen;
-  readErr = dataFifo->readChunk(&packet[2], pktLen - 1, false);
-  if (readErr < 0){
+  evt.resize(dataPacketLength + 1u);
+  evt[0] = DATA_SOP;
+  evt[1] = dataPacketLength;
+  const int wordsRead =
+      dataFifo->readChunk(&evt[2], remainingWords, false);
+  if (wordsRead != static_cast<int>(remainingWords)) {
     fprintf(stderr, "Error in reading event\n");
-    return -2;
+    return -3;
   }
 
   if (kVerbose > 4){
     printf("%s) Event:\n", __METHOD_NAME__);
-    for(uint32_t i = 0; i < pktLen+1; i++){
-      printf("%08x\n", packet[i]);
+    for(uint32_t i = 0; i < dataPacketLength + 1u; i++){
+      printf("%08x\n", evt[i]);
     }
   }
 
-  *evtLen = pktLen+1;
-  evt.resize(*evtLen);//resize to the full Len
-  memcpy(evt.data(), packet, sizeof(uint32_t)*(pktLen+1));//better to use pktLen (not modified by the hacking)
+  *evtLen = static_cast<int>(dataPacketLength + 1u);
+  dataPacketPending = false;
+  dataPacketLength = 0;
 
   return 0;
 }

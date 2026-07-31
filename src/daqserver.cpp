@@ -12,6 +12,7 @@
 #include "daqserver.h"
 #include "makaClient.h"
 #include "paperoProtocol.h"
+#include "runControl.h"
 
 extern makaClient* maka;
 
@@ -29,7 +30,6 @@ daqserver::daqserver(int port, int verb, std::string paperoCfgPath):tcpServer(po
   //Stop the run (if applicable) and reset
   kStart  = false;
   mode    = paperoProtocol::kStopCommand;
-  runCommand = paperoProtocol::kStopCommand;
   addressdet.clear();
   portdet.clear();
   makaEn.clear();
@@ -145,6 +145,30 @@ void daqserver::SetCalibrationMode(uint32_t mode){
   return;
 }
 
+void daqserver::SetEventEnable(uint32_t enable){
+  for (auto de10 : det) {
+    de10->SetEventEnable(enable);
+  }
+}
+
+void daqserver::SetAutoCalibration(uint32_t enable){
+  for (auto de10 : det) {
+    de10->SetAutoCalibration(enable);
+  }
+}
+
+void daqserver::SetSaveCalibration(uint32_t enable){
+  for (auto de10 : det) {
+    de10->SetSaveCalibration(enable);
+  }
+}
+
+void daqserver::SetApplyThresholds(uint32_t enable){
+  for (auto de10 : det) {
+    de10->SetApplyThresholds(enable);
+  }
+}
+
 void daqserver::SetMode(uint8_t _mode){
 
   mode = _mode;
@@ -156,17 +180,6 @@ void daqserver::SetMode(uint8_t _mode){
   return;
 }
 
-void daqserver::SetRunCommand(uint32_t command){
-
-  mode = command;
-
-  for (int ii=0; ii<(int)(det.size()); ii++) {
-    det[ii]->SetRunCommand(mode);
-  }
-
-  return;
-}
-  
 void daqserver::SelectTrigger(uint32_t trig){
 
   trigtype = trig;
@@ -229,6 +242,59 @@ void daqserver::ResetBoards(){
   for(auto de10 : det){
     de10->EventReset();
   }
+}
+
+int daqserver::AllCalibrationsValid(bool& allValid){
+  allValid = !det.empty();
+  for (uint32_t ii = 0; ii < det.size(); ++ii) {
+    bool boardValid = false;
+    if (det[ii]->GetCalibrationValid(boardValid) != 0) {
+      fprintf(stderr, "%s) Cannot read CAL_VALID from DE10 %u\n",
+              __METHOD_NAME__, ii);
+      return 1;
+    }
+    allValid = allValid && boardValid;
+    if (kVerbosity > 0) {
+      printf("%s) DE10 %u calibration is %s\n", __METHOD_NAME__, ii,
+             boardValid ? "valid" : "not valid");
+    }
+  }
+  return 0;
+}
+
+int daqserver::AllBoardsRunIdle(bool& allIdle){
+  allIdle = !det.empty();
+  for (uint32_t ii = 0; ii < det.size(); ++ii) {
+    bool boardIdle = false;
+    if (det[ii]->GetRunIdle(boardIdle) != 0) {
+      fprintf(stderr, "%s) Cannot read RUN_IDLE from DE10 %u\n",
+              __METHOD_NAME__, ii);
+      return 1;
+    }
+    allIdle = allIdle && boardIdle;
+  }
+  return 0;
+}
+
+int daqserver::WaitForBoardsRunIdle(uint32_t timeoutMs){
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(timeoutMs);
+  do {
+    bool allIdle = false;
+    if (AllBoardsRunIdle(allIdle) != 0) {
+      return 1;
+    }
+    if (allIdle) {
+      printf("%s) All PAPERO pipelines are drained\n", __METHOD_NAME__);
+      return 0;
+    }
+
+    usleep(100000);
+  } while (std::chrono::steady_clock::now() < deadline);
+
+  fprintf(stderr, "%s) Timeout waiting for PAPERO RUN_IDLE\n",
+          __METHOD_NAME__);
+  return 1;
 }
 
 int daqserver::ReplyToCmd(char* msg) {
@@ -318,10 +384,6 @@ void daqserver::ProcessCmdReceived(char* msg){
     static const char* btcmd ="FF800008";
     static const char* start ="EE000001";
     static const char* stop  ="EE000000";
-    static const char* beam  ="0002";
-    static const char* cal   ="0004"; //10Hz
-    static const char* calOffSpill   ="0000"; //10Hz
-    static const char* mix   ="0001";
 
     static const int length=16;
     char command_string[2*length+1] = "";
@@ -344,40 +406,68 @@ void daqserver::ProcessCmdReceived(char* msg){
 
         // ignore consecutive Start commands
         if(kStart){
-          char tempStr[] = "Already in START state. Ignoring last command.";
+          char tempStr[LEN] = "Already in START state. Ignoring last command.";
           printf("%s) %s\n", __METHOD_NAME__, tempStr);
           ReplyToCmd(tempStr);
           return;
         }
 
-	      char runtype[32] = "";
-	      strncpy(runtype, &cmdgroup[1][4], 4);
-	      char sruntype[32] = "";
-        runCommand = paperoProtocol::kStopCommand;
-	      if (strcmp(beam,runtype)==0) {
-	        sprintf(sruntype, "BEAM");
-	        SetCalibrationMode(0);
-          SelectTrigger(0);
-          runCommand = paperoProtocol::kBeamCommand;
-	      }
-	      else if ((strcmp(cal,runtype)==0) | (strcmp(calOffSpill,runtype)==0)) {
-	        sprintf(sruntype, "CAL");
-	        SetCalibrationMode(1);
-          SelectTrigger(1);
-          runCommand = paperoProtocol::kCalibrationCommand;
-	      }
-        else if (strcmp(mix,runtype)==0) {
-	        sprintf(sruntype, "MIX");
-	        SetCalibrationMode(1);
-          SelectTrigger(1);
-          runCommand = paperoProtocol::kMixedCommand;
-	      }
-	      else {
-	        printf("%s) Not a valid run type %s\n", __METHOD_NAME__, runtype);
-	        sprintf(msg, "NOT-A-VALID-RUNTYPE");
-          ReplyToCmd(msg);
+	      char runControlText[5] = "";
+	      strncpy(runControlText, &cmdgroup[1][4], 4);
+        char* controlEnd = nullptr;
+        const unsigned long parsedControl =
+          strtoul(runControlText, &controlEnd, 16);
+        run_control::Command runCommand;
+        if (controlEnd != runControlText + 4 || parsedControl > 0xffffu ||
+            !run_control::Decode(static_cast<uint16_t>(parsedControl),
+                                 runCommand)) {
+          char tempStr[LEN] = "NOT-A-VALID-RUN-CONTROL";
+          printf("%s) Invalid run-control field %s\n", __METHOD_NAME__,
+                 runControlText);
+          ReplyToCmd(tempStr);
           return;
-	      }
+        }
+
+        const bool dumpOnly =
+          runCommand.mode == run_control::RunMode::Dump;
+        bool forceCalibration =
+          runCommand.mode == run_control::RunMode::Cal ||
+          runCommand.mode == run_control::RunMode::Mix;
+        const bool autoCalibration =
+          runCommand.mode == run_control::RunMode::Daq;
+        const bool eventEnable =
+          runCommand.mode == run_control::RunMode::Daq ||
+          runCommand.mode == run_control::RunMode::Mix;
+
+        if (runCommand.mode == run_control::RunMode::Daq) {
+          bool allValid = false;
+          if (AllCalibrationsValid(allValid) != 0) {
+            char tempStr[LEN] = "CALIB-STATUS-READ-ERROR";
+            ReplyToCmd(tempStr);
+            return;
+          }
+          forceCalibration = !allValid;
+          if (!allValid) {
+            printf("%s) At least one board is not calibrated; "
+                   "calibrating all boards before DAQ\n", __METHOD_NAME__);
+          }
+        }
+
+        SetCalibrationMode(forceCalibration ? 1u : 0u);
+        SetAutoCalibration(autoCalibration ? 1u : 0u);
+        SetSaveCalibration(
+          (dumpOnly || runCommand.saveCalibration) ? 1u : 0u);
+        SetApplyThresholds(dumpOnly ? 0u : 1u);
+        SetEventEnable(eventEnable ? 1u : 0u);
+        // User protocol: 0=internal, 1=external. The detector API retains
+        // its historical inverse polarity: 1=internal, 0=external.
+        if (!dumpOnly) {
+          SelectTrigger(runCommand.externalTrigger ? 0u : 1u);
+        }
+
+	      char sruntype[32] = "";
+        snprintf(sruntype, sizeof(sruntype), "%s",
+                 run_control::Name(runCommand.mode));
 
         char srunnum[32] = "";
         strncpy(srunnum,  &cmdgroup[1][0], 4);
@@ -386,15 +476,21 @@ void daqserver::ProcessCmdReceived(char* msg){
         uint32_t unixtime = strtol(cmdgroup[3], &ptr, 16);
         std::time_t t = unixtime;
         if (kVerbosity>0) {
-          printf("runtype=%s (-> %s), runnum=%s (%u), unixtime=%u (%s -> %s)\n", runtype, sruntype, srunnum, runnum, unixtime, cmdgroup[3], asctime(localtime(&t)));
+          printf("control=%s (mode=%s, trigger=%s, tables=%s), "
+                 "runnum=%s (%u), unixtime=%u (%s -> %s)\n",
+                 runControlText, sruntype,
+                 dumpOnly ? "n/a" :
+                   (runCommand.externalTrigger ? "external" : "internal"),
+                 (dumpOnly || runCommand.saveCalibration) ? "save" : "nosave",
+                 srunnum, runnum, unixtime, cmdgroup[3],
+                 asctime(localtime(&t)));
         }
         ResetBoards();
         runStart();
         maka->runStart(sruntype, runnum, unixtime);
 
-        printf("%s) Everything started. Sending PAPERO command %08x...\n",
-               __METHOD_NAME__, runCommand);
-        SetRunCommand(runCommand);
+        printf("%s) Everything started. Enabling triggers...\n", __METHOD_NAME__);
+        SetMode(1);
 
         //Spawn a thread to read events. Stop() will join the thread
         nEvents = 0;
@@ -407,13 +503,20 @@ void daqserver::ProcessCmdReceived(char* msg){
         printf("%s) Stop()\n", __METHOD_NAME__);
         // ignore consecutive Start commands
         if(!kStart){
-          char tempStr[] = "Already in STOP state. Ignoring the command.";
+          char tempStr[LEN] = "Already in STOP state. Ignoring the command.";
           printf("%s) %s\n", __METHOD_NAME__, tempStr);
           ReplyToCmd(tempStr);
           return;
         }
         uint32_t nEvts = 0;
-        Stop(nEvts);
+        if (Stop(nEvts) != 0) {
+          // stopOCA reads the event-count word before the textual reply.
+          nEvts = 0xffffffffu;
+          Tx(&nEvts, sizeof(nEvts));
+          char tempStr[LEN] = "STOP-DRAIN-ERROR";
+          ReplyToCmd(tempStr);
+          return;
+        }
         printf("%s)        Events: %d \n", __METHOD_NAME__, nEvts);
         Tx(&nEvts, sizeof(nEvts));
         ReplyToCmd(msg);
@@ -473,37 +576,6 @@ int daqserver::updateReg(uint32_t regAddr, uint32_t regCont, uint32_t mask) {
     ret |= (det.at(ii)->updateReg(regAddr, regCont, mask)<<ii);
   }
   return ret;
-}
-
-bool daqserver::WaitForRunIdle(uint32_t timeoutMs) {
-  const auto deadline = std::chrono::steady_clock::now() +
-      std::chrono::milliseconds(timeoutMs);
-
-  do {
-    bool allIdle = true;
-
-    for (uint32_t ii=0; ii<det.size(); ii++) {
-      uint32_t status = 0;
-      if (det.at(ii)->readReg(paperoProtocol::kCalibrationStatusRegister,
-                              status) != 0 ||
-          (status & paperoProtocol::kRunIdleMask) == 0) {
-        allIdle = false;
-      }
-    }
-
-    if (allIdle) {
-      if (kVerbosity > 0) {
-        printf("%s) All PAPERO boards reached RUN_IDLE\n", __METHOD_NAME__);
-      }
-      return true;
-    }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  } while (std::chrono::steady_clock::now() < deadline);
-
-  fprintf(stderr, "%s) Timeout waiting for PAPERO RUN_IDLE\n",
-          __METHOD_NAME__);
-  return false;
 }
 
 int daqserver::Init() {
@@ -633,7 +705,7 @@ void daqserver::Start(char* runtype, uint32_t runnum, uint32_t unixtime) {
   }
 
   ResetBoards();
-  SetRunCommand(runCommand);
+  SetMode(1);
   
   //Dump events to the file until Stop is received
   kStart = true;
@@ -658,18 +730,27 @@ void daqserver::Start(char* runtype, uint32_t runnum, uint32_t unixtime) {
   printf("%s) File %s closed\n", __METHOD_NAME__, dataFileName);
 }
 
-void daqserver::Stop(uint32_t &_nEvts) {
+int daqserver::Stop(uint32_t &_nEvts) {
   if(kStart){
-    SetRunCommand(paperoProtocol::kStopCommand);
-    WaitForRunIdle();
+    SetMode(0);
+    if (WaitForBoardsRunIdle(30000) != 0) {
+      // REG0 already blocks new triggers, but HPS senders and MAKA must stay
+      // alive. Keeping kStart true permits a later STOP retry.
+      fprintf(stderr, "%s) STOP incomplete; HPS and MAKA remain active\n",
+              __METHOD_NAME__);
+      return 1;
+    }
     kStart = false;
+
+    // HPS stopRun performs its final FIFO reads while MAKA is connected.
+    runStop();
     maka->runStop(_nEvts);
     printf("%s) Events: %d \n", __METHOD_NAME__, _nEvts);
-    runStop();
     sleep(10);
   }
   
   if (kVerbosity > 0) printf("%s) Run stopped succesfully\n", __METHOD_NAME__);
+  return 0;
 }
 
 void daqserver::runStart(){

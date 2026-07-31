@@ -1,4 +1,5 @@
 ﻿#include "de10_silicon_base.h"
+#include "paperoProtocol.h"
 #include "utility.h"
 #include <unistd.h>
 
@@ -32,6 +33,15 @@ de10_silicon_base::de10_silicon_base(std::string address, uint32_t port, paperoC
   bias1         = params->bias1;
   ideTest       = (uint32_t)params->ideTest & 0x00000001;
   chTest        = (uint32_t)params->chTest & 0x000000FF;
+  daqMode       = params->daqMode & 0x00000003;
+  lth           = params->lth;
+  hth           = params->hth;
+  // Preserve the historical default, then let daqserver override all policy
+  // bits explicitly for every run-control command.
+  eventEnable   = calEn == 0 ? 1u : 0u;
+  autoCalib     = 0u;
+  saveCalib     = calEn == 1 ? 1u : 0u;
+  applyThresholds = 1u;
 
   //Send command length and set it with the loopback value
   //Cannot use specific function since it is the first time setting the length
@@ -218,22 +228,38 @@ int de10_silicon_base::SetTrig2Hold(uint32_t delayIn){
   return ret;
 }
 
-int de10_silicon_base::SetRunCommand(uint32_t commandIn) {
+int de10_silicon_base::SetMode(uint8_t modeIn) {
   int ret=0;
-  mode = commandIn;
-  if (SendCmd("setMode")==0) {
-    SendInt(mode);
+
+  if (modeIn == 0u) {
+    mode = paperoProtocol::kStopCommand;
+    if (SendCmd("stopAcquisition") != 0) {
+      ret = 1;
+    }
   }
   else {
-    ret = 1;
+    const uint32_t thresholds = paperoProtocol::PackThresholds(lth, hth);
+    mode = paperoProtocol::BuildAcquisitionCommand(
+      eventEnable != 0u,
+      calEn != 0u,
+      autoCalib != 0u,
+      saveCalib != 0u,
+      applyThresholds != 0u,
+      daqMode);
+
+    // PAPERO samples REG11 when REG0.RUN_REQUEST rises. Send both values to
+    // the HPS in one command so it can preserve REG11 -> REG0 write order.
+    if (SendCmd("startAcquisition") == 0) {
+      SendInt(thresholds);
+      SendInt(mode);
+    }
+    else {
+      ret = 1;
+    }
   }
   
-  ret += checkReply("Setting run command");
+  ret += checkReply("Setting Mode");
   return ret;
-}
-
-int de10_silicon_base::SetMode(uint8_t modeIn) {
-  return SetRunCommand((static_cast<uint32_t>(modeIn) << 4) & 0x00000010);
 }
 
 int de10_silicon_base::GetEventNumber() {
@@ -261,6 +287,29 @@ int de10_silicon_base::EventReset() {
   
   ret += checkReply("Resetting events (reinitialize)");
 
+  return ret;
+}
+
+int de10_silicon_base::GetCalibrationValid(bool& valid) {
+  uint32_t status = 0;
+  const int ret = readReg(paperoProtocol::kCalibrationStatusRegister, status);
+  valid = ret == 0 &&
+          (status & paperoProtocol::kCalibrationValidMask) != 0u;
+  if (verbosity > 0) {
+    printf("%s) CAL_VALID=%u (status=%08x)\n", __METHOD_NAME__,
+           valid ? 1u : 0u, status);
+  }
+  return ret;
+}
+
+int de10_silicon_base::GetRunIdle(bool& idle) {
+  uint32_t status = 0;
+  const int ret = readReg(paperoProtocol::kCalibrationStatusRegister, status);
+  idle = ret == 0 && (status & paperoProtocol::kRunIdleMask) != 0u;
+  if (verbosity > 1) {
+    printf("%s) RUN_IDLE=%u (status=%08x)\n", __METHOD_NAME__,
+           idle ? 1u : 0u, status);
+  }
   return ret;
 }
 

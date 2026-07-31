@@ -146,7 +146,15 @@ $(OCASTOP): $(OBJECTSSTOP)
 	$(CXX) $(CPPFLAGS) $^ -o $@ $(ROOTGLIBS)
 	@cp -v $(OCASTOP) $(BIN)/	
 
-$(OBJ)/daqserver.o $(OBJ)/makaMerger.o $(OBJARM)/fpgaDriver.o: $(INC)/paperoProtocol.h
+$(OBJ)/daqserver.o $(OBJ)/de10_silicon_base.o $(OBJ)/makaMerger.o \
+	$(OBJ)/paperoConfig.o $(OBJARM)/fpgaDriver.o: $(INC)/paperoProtocol.h
+
+$(OBJ)/mainstart.o $(OBJ)/daqserver.o: $(INC)/runControl.h
+
+$(OBJ)/daqserver.o $(OBJ)/de10_silicon_base.o $(OBJ)/paperoConfig.o: \
+	$(INC)/paperoConfig.h
+
+$(OBJARM)/hpsServer.o $(OBJARM)/fpgaDriver.o: $(INC)/fpgaDriver.h
 
 $(PAPERO): $(OBJECTSHPS)
 ifeq ($(UNAME_S),Darwin)

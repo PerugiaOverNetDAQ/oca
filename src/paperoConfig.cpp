@@ -4,6 +4,7 @@
 */
 
 #include "paperoConfig.h"
+#include "paperoProtocol.h"
 
 void paperoConfig::readConfigFromFile(const string& filePath)
 {
@@ -52,22 +53,24 @@ void paperoConfig::openInputFile(const string& filePath, ifstream& inFile)
 int paperoConfig::config(istream& is)
 {
   int linesRead = 0;
-  int wordsRead = 0;
-  bool discardLine;
-  
+
   //Get a complete line (until \n)
   for (string line; getline(is, line); ) {
-    configParams* tempBuffer = new configParams;
+    configParams* tempBuffer = new configParams{};
+    tempBuffer->daqMode = 0;
+    tempBuffer->lth = paperoProtocol::kDefaultLowThreshold;
+    tempBuffer->hth = paperoProtocol::kDefaultHighThreshold;
     stringstream ss(line);
+    int wordsRead = 0;
+    bool discardLine = line.find_first_not_of(" \t\r") == string::npos;
+    bool commandFieldParseError = false;
 
-    //Check if empty line
-    discardLine = line.length() == 0;
-    //Read line, word by word
-    for (string word; getline(ss, word, ' '); ) {
-      //Ignore comments
-      if ((wordsRead == 0) & (word[0] == '#'))
-      {
-        discardLine = true;
+    // Read whitespace-separated fields. This also accepts tabs and repeated
+    // spaces, unlike getline(..., ' '), which produced empty columns.
+    for (string word; ss >> word; ) {
+      // Ignore complete comment lines and allow trailing inline comments.
+      if (word[0] == '#') {
+        discardLine = wordsRead == 0;
         break;
       }
 
@@ -142,6 +145,20 @@ int paperoConfig::config(istream& is)
         case 22:
           readOption<uint16_t>(tempBuffer->chTest, word);
           break;
+        // Optional trailing PAPERO command fields. HEF has two bias columns,
+        // therefore these follow Test Channel at indices 23..25.
+        case 23:
+          commandFieldParseError |=
+              not readOption<uint32_t>(tempBuffer->daqMode, word);
+          break;
+        case 24:
+          commandFieldParseError |=
+              not readOption<uint16_t>(tempBuffer->lth, word);
+          break;
+        case 25:
+          commandFieldParseError |=
+              not readOption<uint16_t>(tempBuffer->hth, word);
+          break;
         default:
           cout << __METHOD_NAME__ << ") Too many columns in config file." << endl;
           exit(1);
@@ -150,17 +167,43 @@ int paperoConfig::config(istream& is)
       wordsRead++;
     }
     //Discard empty or comment lines
-    if (discardLine) continue;
+    if (discardLine) {
+      delete tempBuffer;
+      continue;
+    }
+
+    // Keep existing 23-column HEF files valid, but reject partially specified
+    // DAQ settings so a missing threshold cannot silently use a default.
+    if (wordsRead != 23 and wordsRead != 26) {
+      cout << __METHOD_NAME__ << ") Expected 23 legacy columns or 26 "
+           << "columns including DAQ mode, LTH and HTH; got "
+           << wordsRead << ". Abort." << endl;
+      delete tempBuffer;
+      exit(1);
+    }
+
+    if (commandFieldParseError) {
+      cout << __METHOD_NAME__ << ") Invalid DAQ mode or threshold value. Abort."
+           << endl;
+      delete tempBuffer;
+      exit(1);
+    }
 
     if (not (isValidFixedFloat(tempBuffer->bias0) and isValidFixedFloat(tempBuffer->bias1))) {
       cout << __METHOD_NAME__ << ") Bias values should be in the format XX.X. Abort." << endl;
+      delete tempBuffer;
+      exit(1);
+    }
+
+    if (tempBuffer->daqMode > 3) {
+      cout << __METHOD_NAME__ << ") DAQ mode must be in the range 0..3. Abort." << endl;
+      delete tempBuffer;
       exit(1);
     }
 
     //Add the temporary buffer to the output map
     conf.push_back(tempBuffer);
     
-    wordsRead = 0;
     linesRead++;
   }
 

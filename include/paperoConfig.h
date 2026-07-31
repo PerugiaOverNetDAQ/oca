@@ -59,6 +59,9 @@ class paperoConfig
       string bias1; //!Bias value to be set for the detector 1
       bool ideTest; //!Test port of IDE1140
       uint16_t chTest; //!IDE1140 channel connected to CAL port
+      uint32_t daqMode; //!Normal-event format: 0 Legacy, 1 Raw, 2 Compressed, 3 Mixed
+      uint16_t lth; //!Low clustering threshold loaded in REG11[15:0]
+      uint16_t hth; //!High clustering threshold loaded in REG11[31:16]
 
       void dump()
       {
@@ -85,6 +88,11 @@ class paperoConfig
         cout << "Bias 1:               " << bias1 << endl;
         cout << "IDE1140 Test Port:    " << ideTest << endl;
         cout << "IDE1140 Channel Test: " << chTest << endl;
+        cout << "DAQ Mode:             " << daqMode << endl;
+        cout << "Low Threshold:        0x" << hex << setw(4)
+             << setfill('0') << lth << dec << setfill(' ') << endl;
+        cout << "High Threshold:       0x" << hex << setw(4)
+             << setfill('0') << hth << dec << setfill(' ') << endl;
       }
     };
 
@@ -116,12 +124,14 @@ class paperoConfig
     
     //! Generic function to read a single option
     template <typename T>
-    void readOption(T& option, string is)
+    bool readOption(T& option, const string& value)
     {
-      if (is.substr(0,2) == "0x")
-        stringstream(is) >> hex >> option;
+      stringstream parser(value);
+      if (value.substr(0,2) == "0x")
+        parser >> hex >> option;
       else
-        stringstream(is) >> option;
+        parser >> option;
+      return not parser.fail() and parser.eof();
     }
 
     bool isValidFixedFloat(const std::string& s) {

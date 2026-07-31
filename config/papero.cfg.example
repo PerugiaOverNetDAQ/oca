@@ -1,5 +1,6 @@
-#ID | MAKA enable | IPaddr | Port | cmd Len | TestUnitCfg | TestUnit en | HK en | data en | IntTrig Period | Pkt Len | FeClk period | FeClk duty | AdcClk period | AdcClk duty | Trig2Hold | AD7276 FastMode | Busy Len | ADC delay | Bias 0 (XX.X format) | Bias 1 (XX.X format) | IDE Test | Test Channel |
-0 1 192.168.2.101 5000 24 0 0 0 1 0x0002faf0  908 50 8 2 1 325 1 40 10 50.0 50.0 0 0x7f
-1 1 192.168.2.102 5000 24 0 0 0 1 0x0002faf0  908 50 8 2 1 325 1 40 10 50.0 50.0 0 0x7f
-2 1 192.168.2.103 5000 24 0 0 0 1 0x0002faf0  908 50 8 2 1 325 1 40 10 50.0 50.0 0 0x7f
-77 0 192.168.2.177 5000 24 0 0 0 1 0x0002faf0 908 34 8 2 1 325 1 40 10 00.0 00.0 0 0x7f
+#ID | MAKA enable | IPaddr | Port | cmd Len | TestUnitCfg | TestUnit en | HK en | data en | IntTrig Period | Pkt Len | FeClk period | FeClk duty | AdcClk period | AdcClk duty | Trig2Hold | AD7276 FastMode | Busy Len | ADC delay | Bias 0 (XX.X format) | Bias 1 (XX.X format) | IDE Test | Test Channel | DAQ mode (0 LEG, 1 RAW, 2 COMP, 3 MIX) | LTH | HTH |
+# DAQ mode selects the normal-event payload; LTH/HTH are written to REG11 and applied at the next START.
+0 1 192.168.2.101 5000 24 0 0 0 1 0x0002faf0 908 50 8 2 1 325 1 40 10 50.0 50.0 0 0x7f 0 0x0030 0x0070
+1 1 192.168.2.102 5000 24 0 0 0 1 0x0002faf0 908 50 8 2 1 325 1 40 10 50.0 50.0 0 0x7f 0 0x0030 0x0070
+2 1 192.168.2.103 5000 24 0 0 0 1 0x0002faf0 908 50 8 2 1 325 1 40 10 50.0 50.0 0 0x7f 0 0x0030 0x0070
+77 0 192.168.2.177 5000 24 0 0 0 1 0x0002faf0 908 34 8 2 1 325 1 40 10 00.0 00.0 0 0x7f 0 0x0030 0x0070

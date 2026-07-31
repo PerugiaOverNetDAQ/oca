@@ -151,6 +151,23 @@ void hpsServer::ProcessCmdReceived(char* msg){
     fpga->SetMode(mode);
     Tx(&kOkVal, sizeof(kOkVal));
   }
+  else if(strcmp(msg, "cmd=startAcquisition") == 0){
+    cmdReply("startAcquisition");
+
+    // Wire order is part of the OCA/PAPERO protocol: REG11 first, then REG0.
+    uint32_t thresholds = 0;
+    uint32_t command = 0;
+    Rx(&thresholds, sizeof(thresholds));
+    Rx(&command, sizeof(command));
+    fpga->StartAcquisition(command, thresholds);
+    Tx(&kOkVal, sizeof(kOkVal));
+  }
+  else if(strcmp(msg, "cmd=stopAcquisition") == 0){
+    cmdReply("stopAcquisition");
+
+    fpga->StopAcquisition();
+    Tx(&kOkVal, sizeof(kOkVal));
+  }
   else if(strcmp(msg, "cmd=getEventNumber") == 0){
     cmdReply("getEventNumber");
 

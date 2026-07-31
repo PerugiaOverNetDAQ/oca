@@ -221,19 +221,17 @@ int makaMerger::merger(){
 int makaMerger::collector(FILE* _dataFile){
   int readRet = 0;
   int writeRet = 0;
-  //std::vector<uint32_t*> evts(det.size(), "");
-  uint32_t evtLen = 0;
   uint32_t evtLen_tot = 0;
-  std::vector<uint32_t> evt(paperoProtocol::kHefPacketWords);
+  std::vector<std::vector<uint32_t>> events(
+      kDet.size(),
+      std::vector<uint32_t>(paperoProtocol::kHefPacketWords));
+  std::vector<uint32_t> evtLengths(kDet.size(), 0);
 
   // FIX ME: at most 64 detectors
   std::bitset<64> replied{0};
-  
-  uint32_t evtHeader;
-  uint32_t evtLenHeader = sizeof(uint32_t) *
-      (kDet.size() * paperoProtocol::kHefPacketWords + 3);
-  bool headerWritten = false;
-  struct timespec utc_time;
+
+  struct timespec utc_time{};
+  bool timestampCaptured = false;
   //long long sec;
   //long nsec;
   bool dataToOm = kDataToOm & (kNEvts%kOmPreScale==0 ? true : false);
@@ -242,75 +240,80 @@ int makaMerger::collector(FILE* _dataFile){
   do {
     for (uint32_t ii=0; ii<kDet.size(); ii++) {
       if(!replied[ii]){
-        uint32_t readSingle = (getEvent(evt, evtLen, ii));
+        uint32_t readSingle =
+            getEvent(events[ii], evtLengths[ii], ii);
         readRet += readSingle;
-        if(evtLen){
+        if(evtLengths[ii]){
           replied[ii] = true;
+          evtLen_tot += evtLengths[ii];
+          if (!timestampCaptured) {
+            clock_gettime(CLOCK_REALTIME, &utc_time);
+            timestampCaptured = true;
+          }
         }
-        evtLen_tot += evtLen;
-
-	      // only write the header when the first board replies
-	      if(replied.count() == 1 && !headerWritten){
-          evtHeader = 0xfa4af1ca;
-	        fwrite(&evtHeader, 4, 1, _dataFile); //Known word
-          if (dataToOm) omClient->Tx(&evtHeader, 4);
-          
-          //UTC time for synchronization
-          clock_gettime(CLOCK_REALTIME, &utc_time);
-          fwrite(&utc_time, sizeof(utc_time), 1, _dataFile);
-          //sec  = utc_time.tv_sec;
-          //nsec = utc_time.tv_nsec;
-
-          //FIX ME: Use real lenght of the event, not this pre-computed one
-          fwrite(&evtLenHeader, 4, 1, _dataFile); //Event length
-          if (dataToOm) omClient->Tx(&evtLenHeader, 4);
-          
-          fwrite(&kNEvts, 4, 1, _dataFile); //Event number
-          if (dataToOm) omClient->Tx(&kNEvts, 4);
-
-          //FIX ME: Use real type of the event, not this pre-computed one
-          evtHeader =  0x10000000 | (kDetAddrs.size() & 0xffff);
-          fwrite(&evtHeader, 4, 1, _dataFile); //
-          if (dataToOm) omClient->Tx(&evtHeader, 4);
-          
-          //Separate cal and physics event counters
-          uint32_t i2cWord = evt[6];
-          bool i2cType = i2cWord & 0x1;
-          //printf("%s) I2C word: %08x - Trigger Type: %d\n", __METHOD_NAME__, i2cWord, i2cType);
-          //@todo is it updated by the FPGA, withouth I2C trigger?
-          kNEvtsCal += !i2cType;
-          kNEvtsBeam += i2cType;
-
-          ++kNEvts;
-	        headerWritten = true;
-	      }
-	      writeRet += fwrite(evt.data(), evtLen, 1, _dataFile); //Event to file
-        if (dataToOm) omClient->Tx(evt.data(), evtLen); //Event to OM
 
 	      if (kVerbosity>0) {
 	        printf("%s) Get event from DE10 %s\n", __METHOD_NAME__,\
                     kDetAddrs[ii].c_str());
-	        printf("  Bytes read: %d/%d\n", readSingle, evtLen);
-	        printf("  Writes performed: %d/%lu\n", writeRet, kDet.size());
+	        printf("  Bytes read: %d/%d\n", readSingle, evtLengths[ii]);
 	      }
       }
     }
   } while (replied.count() && (replied.count() != kDet.size()) && kRunning);
 
-  //Everything is read and dumped to file
-  if (evtLen_tot!=0) {
-    if (readRet != (int)evtLen_tot || writeRet != (int)(kDet.size())) {
-      printf("%s):\n", __METHOD_NAME__);
-      printf("    Bytes read: %d/%u\n", readRet, evtLen_tot);
-      printf("    Writes performed: %d/%d\n", writeRet, (int)(kDet.size()));
-      return -1;
-    }
-  }
-  else {
+  if (replied.count() == 0) {
     if (kVerbosity>1) {
-      printf("%s) Total event lenght was 0\n", __METHOD_NAME__);
+      printf("%s) Total event length was 0\n", __METHOD_NAME__);
+    }
+    return 0;
+  }
+
+  if (replied.count() != kDet.size()) {
+    printf("%s) Incomplete aggregate event: %lu/%lu detectors\n",
+           __METHOD_NAME__, replied.count(), kDet.size());
+    return -1;
+  }
+
+  // All packet lengths are now known, so the aggregate header remains correct
+  // for Legacy/RAW packets and variable-size Compressed/Mixed packets.
+  uint32_t evtHeader = 0xfa4af1ca;
+  uint32_t evtLenHeader = evtLen_tot + 3*sizeof(uint32_t);
+  fwrite(&evtHeader, 4, 1, _dataFile);
+  if (dataToOm) omClient->Tx(&evtHeader, 4);
+
+  fwrite(&utc_time, sizeof(utc_time), 1, _dataFile);
+
+  fwrite(&evtLenHeader, 4, 1, _dataFile);
+  if (dataToOm) omClient->Tx(&evtLenHeader, 4);
+
+  fwrite(&kNEvts, 4, 1, _dataFile);
+  if (dataToOm) omClient->Tx(&kNEvts, 4);
+
+  evtHeader = 0x10000000 | (kDetAddrs.size() & 0xffff);
+  fwrite(&evtHeader, 4, 1, _dataFile);
+  if (dataToOm) omClient->Tx(&evtHeader, 4);
+
+  // Header layout is common to all modes; trigger type remains at word 6.
+  const uint32_t i2cWord = events[0][6];
+  const bool i2cType = i2cWord & 0x1;
+  kNEvtsCal += !i2cType;
+  kNEvtsBeam += i2cType;
+  ++kNEvts;
+
+  for (uint32_t ii=0; ii<kDet.size(); ii++) {
+    writeRet += fwrite(events[ii].data(), evtLengths[ii], 1, _dataFile);
+    if (dataToOm) {
+      omClient->Tx(events[ii].data(), evtLengths[ii]);
     }
   }
+
+  if (readRet != (int)evtLen_tot || writeRet != (int)(kDet.size())) {
+    printf("%s):\n", __METHOD_NAME__);
+    printf("    Bytes read: %d/%u\n", readRet, evtLen_tot);
+    printf("    Writes performed: %d/%d\n", writeRet, (int)(kDet.size()));
+    return -1;
+  }
+
   return 0;
 }
 

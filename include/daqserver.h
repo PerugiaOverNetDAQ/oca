@@ -28,7 +28,6 @@ private:
   std::thread _3d;//!< Thread handle
   int calibmode;  //!< Calibration enable
   uint32_t mode;  //!< Complete PAPERO register-0 command word
-  uint32_t runCommand; //!< Command selected for the current run type
   int trigtype;   //!< Trigger Type: if '1', internal
   unsigned int nEvents = 0; //!< Acquired event number
   paperoConfig::vectorParam paperoConfVector; //!< Papero configuration vector
@@ -77,8 +76,11 @@ public:
   void SetDetectorsCmdLenght(int detcmdlenght);
 
   void SetCalibrationMode(uint32_t mode);
+  void SetEventEnable(uint32_t enable);
+  void SetAutoCalibration(uint32_t enable);
+  void SetSaveCalibration(uint32_t enable);
+  void SetApplyThresholds(uint32_t enable);
   void SetMode(uint8_t mode);
-  void SetRunCommand(uint32_t command);
   void SelectTrigger(uint32_t trig);
 
   void SetFeClk(uint32_t _feClkDuty, uint32_t _feClkDiv);
@@ -89,6 +91,9 @@ public:
   void SetAdcDelay(uint32_t _adcDelay);
 
   void ResetBoards();
+  int AllCalibrationsValid(bool& allValid);
+  int AllBoardsRunIdle(bool& allIdle);
+  int WaitForBoardsRunIdle(uint32_t timeoutMs);
 
   void ReadAllRegs();
   
@@ -101,10 +106,9 @@ public:
     Update a single register with a mask to all detectors
   */
   int updateReg(uint32_t regAddr, uint32_t regCont, uint32_t mask);
-  bool WaitForRunIdle(uint32_t timeoutMs = 10000);
   int Init();
   void Start(char* runtype, uint32_t runnum, uint32_t unixtime);
-  void Stop(uint32_t& _nEvts);
+  int Stop(uint32_t& _nEvts);
 
   /*!
     Receive commands and call the appropriate function
