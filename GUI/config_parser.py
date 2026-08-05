@@ -2,33 +2,36 @@ import configparser
 import os
 from pathlib import Path
 
+# Dynamic resolution of project root directory and default configuration paths
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_OCA_PATH = str(ROOT_DIR / "config" / "oca.cfg")
 DEFAULT_PAPERO_PATH = str(ROOT_DIR / "config" / "papero.cfg")
 
 
 def get_config_parser():
+    """
+    Initializes and returns a ConfigParser instance with case-sensitive option support.
+    """
     parser = configparser.ConfigParser()
+    # Prevent ConfigParser from automatically converting keys to lowercase
     parser.optionxform = str
     return parser
 
-
 def load_oca_config(filepath=DEFAULT_OCA_PATH):
     """
-    Carica la configurazione di OCA.
-    Legge il file oca.cfg e restituisce un dizionario con i parametri globali.
-    Se il file non esiste, restituisce un dizionario con valori di default sicuri.
+    Reads the OCA configuration file. Returns default values if the file is missing.
     """
-
     config = get_config_parser()  
 
     data = {
+        # GUI-managed fields
         "oca_ip": "",
         "maka_dir": "",
         "write_file": False,
         "send_om": False,
         "om_prescaler": 0,
-        
+
+        # C++ Backend extra fields
         "listenClient": False,
         "portClient": 0,
         "clientCmdLen": 0,
@@ -38,6 +41,7 @@ def load_oca_config(filepath=DEFAULT_OCA_PATH):
         "intTrigEn": False
     }
     
+    # Security check
     if not os.path.exists(filepath):
         return data  
         
@@ -45,12 +49,14 @@ def load_oca_config(filepath=DEFAULT_OCA_PATH):
         config.read(filepath)
         if "GLOBAL" in config:
             sec = config["GLOBAL"]
+            # GUI-managed fields (with fallback handling for backward compatibility)
             data["oca_ip"] = sec.get("oca_ip", sec.get("makaIpAddr", ""))
             data["maka_dir"] = sec.get("maka_dir", sec.get("dataFolder", ""))
             data["write_file"] = sec.getboolean("write_file", sec.getboolean("makaSendToFile", False))
             data["send_om"] = sec.getboolean("send_om", sec.getboolean("makaSendToOm", False))
             data["om_prescaler"] = sec.getint("om_prescaler", sec.getint("makaOmPreScale", 0))
             
+            # C++ Backend extra fields
             data["listenClient"] = sec.getboolean("listenClient", False)
             data["portClient"] = sec.getint("portClient", 0)
             data["clientCmdLen"] = sec.getint("clientCmdLen", 0)
@@ -65,8 +71,7 @@ def load_oca_config(filepath=DEFAULT_OCA_PATH):
 
 def save_oca_config(data, filepath=DEFAULT_OCA_PATH):
     """
-    Salva il file oca.cfg. Se il main non passa i campi extra, 
-    vengono inseriti automaticamente con valori di default.
+    Serializes OCA configuration data to an INI file under the [GLOBAL] section.
     """
     dir_name = os.path.dirname(filepath)
     if dir_name:
@@ -75,12 +80,14 @@ def save_oca_config(data, filepath=DEFAULT_OCA_PATH):
     config = get_config_parser() 
 
     config["GLOBAL"] = {
+        # GUI-managed fields
         "oca_ip": str(data.get("oca_ip", "")),
         "maka_dir": str(data.get("maka_dir", "")),
         "write_file": str(data.get("write_file", False)),
         "send_om": str(data.get("send_om", False)),
         "om_prescaler": str(data.get("om_prescaler", 0)),
-        
+
+        # C++ Backend extra fields
         "listenClient": str(data.get("listenClient", False)),
         "portClient": str(data.get("portClient", 0)),
         "clientCmdLen": str(data.get("clientCmdLen", 0)),
@@ -95,16 +102,19 @@ def save_oca_config(data, filepath=DEFAULT_OCA_PATH):
 
 def load_papero_config(filepath=DEFAULT_PAPERO_PATH):
     """
-    Carica la configurazione dei 10 moduli PAPERO includendo tutti i 21 campi
+    Loads configuration settings for all 10 PAPERO detector modules.
     """
     config = get_config_parser() 
     data = []
 
+    # Initialize structure for 10 modules
     for i in range(10):
         data.append({
+            # GUI-managed fields
             "enable": False, "ip": "", "send_maka": False, "trigger": 0, "test_mode": False, "test_channel": 0,
             "bias0": 0.0, "bias1": 0.0, 
             
+            # C++ Backend extra fields 
             "id": i + 1, "tcpPort": 0, "cmdLen": 0, "testUnitCfg": 0,
             "hkEn": False, "dataEn": False, "pktLen": 0, "feClkDiv": 0,
             "feClkDuty": 0, "adcClkDiv": 0, "adcClkDuty": 0, "trig2Hold": 0,
@@ -120,6 +130,7 @@ def load_papero_config(filepath=DEFAULT_PAPERO_PATH):
             section_name = f"PAPERO_{i+1}"
             if section_name in config:
                 sec = config[section_name]
+                # GUI-managed fields
                 data[i]["enable"] = sec.getboolean("enable", sec.getboolean("makaEnable", False))
                 data[i]["ip"] = sec.get("ip", sec.get("ipAddr", ""))
                 data[i]["send_maka"] = sec.getboolean("send_maka", False)
@@ -129,6 +140,7 @@ def load_papero_config(filepath=DEFAULT_PAPERO_PATH):
                 data[i]["bias0"] = sec.getfloat("bias0", 0.0)
                 data[i]["bias1"] = sec.getfloat("bias1", 0.0)
                 
+                # C++ Backend extra fields
                 data[i]["id"] = sec.getint("id", i + 1)
                 data[i]["tcpPort"] = sec.getint("tcpPort", 0)
                 data[i]["cmdLen"] = sec.getint("cmdLen", 0)
@@ -152,8 +164,7 @@ def load_papero_config(filepath=DEFAULT_PAPERO_PATH):
 
 def save_papero_config(data_list, filepath=DEFAULT_PAPERO_PATH):
     """
-    Salva il file papero.cfg strutturando le sezioni con tutti i 21 parametri
-    richiesti dal C++ (iniettando i default se non presenti nel dizionario della GUI).
+    Serializes PAPERO modules configuration to an INI file under [PAPERO_N] sections.
     """
     dir_name = os.path.dirname(filepath)
     if dir_name:
@@ -163,6 +174,7 @@ def save_papero_config(data_list, filepath=DEFAULT_PAPERO_PATH):
     for i, data in enumerate(data_list):
         section_name = f"PAPERO_{i+1}"
         config[section_name] = {
+            # GUI-managed fields
             "enable": str(data.get("enable", False)),
             "ip": str(data.get("ip", "")),
             "trigger": str(data.get("trigger", 0)),
@@ -171,6 +183,7 @@ def save_papero_config(data_list, filepath=DEFAULT_PAPERO_PATH):
             "bias0": str(data.get("bias0", 0.0)),
             "bias1": str(data.get("bias1", 0.0)),
             
+            # C++ Backend extra fields
             "id": str(data.get("id", i + 1)),
             "tcpPort": str(data.get("tcpPort", 0)),
             "cmdLen": str(data.get("cmdLen", 0)),
