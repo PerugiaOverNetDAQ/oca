@@ -15,6 +15,7 @@
 
 #include "utility.h"
 #include "hpsServer.h"
+#include "paperoProtocol.h"
 
 extern fpgaDriver*    fpga;
 extern hpsDataServer* hpsDataStream;
@@ -45,6 +46,23 @@ void hpsServer::cmdLenHandshake(){
   printf("%s) Updating command length to %d\n", __METHOD_NAME__, kCmdLen);
   Tx(&kCmdLen, sizeof(kCmdLen));
   return;
+}
+
+int hpsServer::receiveAll(void* data, size_t bytes) {
+  char* output = static_cast<char*>(data); //Interpreta il buffer generico come una sequenza di byte
+  size_t received = 0u; //Conta quanti byte sono già stati salvati nel buffer
+
+  //Fino alla ricezione completa
+  while (received < bytes) {
+    const int ret = Rx(output + received, static_cast<uint32_t>(bytes - received));
+    if (ret <= 0) {
+      return 1;
+    }
+    //Aggiorna il numero totale di byte ricevuti
+    received += static_cast<size_t>(ret);
+  }
+  //Blocco ricevuto correttamente
+  return 0;
 }
 
 void* hpsServer::ListenCmd(){
@@ -192,6 +210,41 @@ void hpsServer::ProcessCmdReceived(char* msg){
     uint32_t calib = 0;
     Rx(&calib, sizeof(calib));
     fpga->Calibrate(calib);
+    Tx(&kOkVal, sizeof(kOkVal));
+  }
+  //Riconosce il comando che prepara un nuovo payload di iniezione
+  else if(strcmp(msg, "cmd=inject") == 0){
+    //Conferma il comando per permettere al client di inviare il payload
+    cmdReply("inject");
+
+    uint32_t wordCount = 0u;
+
+    //Rifiuta errori di rete e dimensioni superiori a una calibrazione
+    if (receiveAll(&wordCount, sizeof(wordCount)) != 0 ||
+        wordCount > paperoProtocol::kInjectionWords) {
+      //Comunica che la dimensione non è valida
+      Tx(&kBadVal, sizeof(kBadVal));
+      return;
+    }
+
+    std::vector<uint32_t> words(wordCount); //Alloca nella memoria HPS una word per ogni elemento dichiarato
+
+    //Riceve tutto il payload e prepara il buffer nella FPGA
+    if (receiveAll(words.data(), words.size() * sizeof(uint32_t)) != 0 || fpga->PrepareInjection(words) != 0) {
+      //Errore in ricezione o preparazione
+      Tx(&kBadVal, sizeof(kBadVal));
+      return;
+    }
+    //Conferma cpayload pronto
+    Tx(&kOkVal, sizeof(kOkVal));
+  }
+
+  //Annullamento injection
+  else if(strcmp(msg, "cmd=injectCancel") == 0){
+    //Conferma il comando prima di modificare il driver
+    cmdReply("injectCancel");
+    //Elimina payload da HPS
+    fpga->CancelInjection();
     Tx(&kOkVal, sizeof(kOkVal));
   }
   else if(strcmp(msg, "cmd=writeCalibPar") == 0){

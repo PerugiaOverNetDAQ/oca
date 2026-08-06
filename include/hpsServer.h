@@ -22,6 +22,8 @@ private:
     Standard reply procedure to commands
   */
   void cmdReply(const char* cmd);
+  //Riceve tutti i byte richiesti anche con letture TCP parziali
+  int receiveAll(void* data, size_t bytes);
 
 public:
   hpsServer(int port, int verb=0);

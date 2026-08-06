@@ -1,3 +1,16 @@
+# Calibration data injection
+
+Arm a one-shot calibration from a LEGACY or MIXED `.dat` file with:
+
+```text
+startOCA cal int save --inject /path/to/input.dat
+```
+
+Only the LEGACY payload is injected.  The frontend FIFOs are still drained
+and discarded during injection.  At the end of calibration injection is
+disabled; if the file does not contain enough events, OCA reports the
+underflow and restarts the complete calibration using frontend data.
+
 # Data Format of Files Produced by MAKA
 
 ## MAKA File Header

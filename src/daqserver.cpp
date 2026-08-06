@@ -8,6 +8,8 @@
 #include <iostream>
 #include <chrono>
 #include <algorithm>
+#include <fstream>
+#include <unordered_map>
 
 #include "daqserver.h"
 #include "makaClient.h"
@@ -37,6 +39,7 @@ daqserver::daqserver(int port, int verb, std::string paperoCfgPath):tcpServer(po
 }
 
 daqserver::~daqserver(){
+  StopInjectionMonitor();
   if (kVerbosity>0) {
     printf("%s) destroying daqserver\n", __METHOD_NAME__);
   }
@@ -49,6 +52,211 @@ daqserver::~daqserver(){
   }
 
   return;
+}
+
+void daqserver::StopInjectionMonitor(){
+  injectionMonitorStop = true;
+  //Attende la chiusura solo quando il thread esiste
+  if (injectionMonitor.joinable()) {
+    injectionMonitor.join();
+  }
+}
+
+int daqserver::ArmInjection(const std::string& path){
+  //Impedisce di sostituire i dati durante un run attivo
+  if (kStart) {
+    fprintf(stderr, "%s) Injection can only be armed while DAQ is stopped\n",
+            __METHOD_NAME__);
+    return 1;
+  }
+  //Chiude il monitor collegato alla preparazione precedente
+  StopInjectionMonitor();
+
+  std::ifstream input(path, std::ios::binary | std::ios::ate);
+  if (!input) {
+    fprintf(stderr, "%s) Cannot open injection file %s\n", __METHOD_NAME__, path.c_str());
+    return 1;
+  }
+
+  //Verifica che il file contenga un numero intero di word, altrimenti c'è un problema
+  const std::streamoff byteCount = input.tellg();
+  if (byteCount <= 0 || (byteCount % sizeof(uint32_t)) != 0) {
+    fprintf(stderr, "%s) Invalid injection file size: %lld bytes\n", __METHOD_NAME__, static_cast<long long>(byteCount));
+    return 1;
+  }
+
+  input.seekg(0);
+  std::vector<uint32_t> fileWords(
+    static_cast<size_t>(byteCount) / sizeof(uint32_t));
+
+  //Carica tutto il file in RAM server DAQ (OCA)
+  if (!input.read(reinterpret_cast<char*>(fileWords.data()), byteCount)) {
+    fprintf(stderr, "%s) Cannot read injection file %s\n", __METHOD_NAME__, path.c_str());
+    return 1;
+  }
+
+  //Associa ogni detector id alla posizione della rispettiva DE10. Ogni DE10 riceve i propri dati
+  std::unordered_map<uint32_t, size_t> detectorIndex;
+  //Crea un vettore di payload separato per ogni DE10
+  std::vector<std::vector<uint32_t>> payloads(det.size());
+  for (size_t i = 0; i < det.size(); ++i) {
+    detectorIndex[det[i]->GetDetId()] = i;
+  }
+
+  //Scorre tutte le word per trovare i pacchetti PAPERO nel file MAKA
+  size_t position = 0u;
+  while (position + paperoProtocol::kPayloadOffset <= fileWords.size()) {
+    //Avanza di una word quando la posizione corrente non contiene il SOP
+    //0xBABA1A9A, parametrizzato nel file .h
+    if (fileWords[position] != paperoProtocol::kDataSop) {
+      ++position;
+      continue;
+    }
+
+    //Ricava la dimensione completa del pacchetto dalla lunghezza dichiarata
+    const uint32_t packetLength = fileWords[position+1u];
+    const size_t packetWords = static_cast<size_t>(packetLength) + 1u;
+
+    //Scarta pacchetti fuori limite incompleti o privi del trailer
+    //kHefPacketLength = 896 + 12 = 908
+    //kHefMaxPacketLength = 1792 + 12 = 1804, con la mixed
+    //trailer 0x0BEDFACE posizione SOP+lunghezza dichiarata-1
+    if (packetLength < paperoProtocol::kHefPacketLength || packetLength > paperoProtocol::kHefMaxPacketLength || position + packetWords > fileWords.size() || fileWords[position + packetLength - 1u] != paperoProtocol::kDataTrailer) {
+      ++position;
+      continue;
+    }
+
+    //Trigger type e detector id da header PAPERO
+    const uint32_t triggerType = fileWords[position+6u] & 0xffu;
+    const uint32_t detectorId = fileWords[position+4u] >> 16;
+    //Cerca la DE10 configurata per il detector trovato
+    const auto found = detectorIndex.find(detectorId);
+    //Accetta solo dati legacy (Da Prior.Enc) destinati a una DE10 configurata
+    //Se ad esempio carico un file che ha prima le tabelle di calib, grazie al trig type non le accetto
+    if ((triggerType == paperoProtocol::kLegacyTrigType ||
+         triggerType == paperoProtocol::kMixedTrigType) &&
+        found != detectorIndex.end()) {
+      auto& output = payloads[found->second];
+      //Ignora gli eventi che superano la dimensione della calibrazione
+      if (output.size() < paperoProtocol::kInjectionWords) {
+        //Seleziona la prima word del payload legacy
+        const auto first = fileWords.begin() + position + paperoProtocol::kPayloadOffset;
+        //Copia un payload completo nel vettore della DE10 trovata
+        output.insert(output.end(), first, first + paperoProtocol::kHefPayloadWords);
+      }
+    }
+    //Salta direttamente alla word successiva al pacchetto valido
+    position += packetWords;
+  }
+
+  //Trasferisce ogni vettore alla DE10 corrispondente
+  for (size_t i = 0; i < det.size(); ++i) {
+    //Calcola quanti eventi completi sono disponibili per la board
+    const size_t events = payloads[i].size() / paperoProtocol::kHefPayloadWords;
+    printf("%s) DE10 %zu: loaded %zu/%u legacy events from %s\n", __METHOD_NAME__, i, events, paperoProtocol::kCalibrationEvents, path.c_str());
+    //Segnala che il run potrà terminare con underflow
+    if (events < paperoProtocol::kCalibrationEvents) {
+      fprintf(stderr, "%s) DE10 %zu has too few injected events; " "the calibration will fall back to FE data\n", __METHOD_NAME__, i);
+    }
+
+    //Invia il payload alla memoria HPS della board corrente
+    //Reminder RAM DDR HPS 1 GB
+    //          payload injectionWords   10,5 MiB
+    //config FIFO FPGA  1024 word 4 KiB
+    //FIFO di iniezione FPGA 4096 word 16 KiB, possiamo in caso ingrandirla
+    if (det[i]->PrepareInjection(payloads[i]) != 0) {
+      //Annulla tutte le board quando una prep fallisce
+      fprintf(stderr, "%s) Cannot prepare injection on DE10 %zu\n", __METHOD_NAME__, i);
+      for (auto board : det) {
+        board->SetInjectionEnable(0u);
+        board->CancelInjection();
+      }
+      injectionArmed = false;
+      return 1;
+    }
+  }
+
+  injectionArmed = true;
+  return 0;
+}
+
+int daqserver::DisarmInjection(){
+  //Impedisce la cancellazione durante un run attivo
+  if (kStart) {
+    fprintf(stderr, "%s) Injection can only be disarmed while DAQ is stopped\n",  __METHOD_NAME__);
+    return 1;
+  }
+  StopInjectionMonitor();
+  int ret = 0;
+  //Disabilita e cancella i dati su ogni board
+  for (auto board : det) {
+    board->SetInjectionEnable(0u);
+    ret |= board->CancelInjection();
+  }
+  injectionArmed = false;
+  return ret;
+}
+
+void daqserver::MonitorInjection(){
+  //Ripete il controllo fino alla richiesta di arresto
+  while (!injectionMonitorStop) {
+    bool allFinished = !det.empty();
+    bool failed = false;
+
+    //Legge e unifica lo stato di tutte le board
+    for (size_t i = 0; i < det.size(); ++i) {
+      uint32_t status = 0u;
+      //Mantiene il monitor attivo quando una lettura fallisce
+      if (det[i]->GetInjectionStatus(status) != 0) {
+        allFinished = false;
+        continue;
+      }
+      //Rileva underflow o altri errori segnalati dalla FPGA
+      failed = failed || (status & paperoProtocol::kInjectionFailedMask) != 0u;
+      allFinished = allFinished && (status & (paperoProtocol::kInjectionDoneMask | paperoProtocol::kInjectionFailedMask)) != 0u;
+    }
+
+    if (failed) {
+      //Disabilita la sorgente di iniezione dopo un errore
+      fprintf(stderr, "%s) Injection underflow: inject=1 -> inject=0; " "restarting the calibration from FE data\n", __METHOD_NAME__);
+      for (auto board : det) {
+        board->SetInjectionEnable(0u);
+      }
+      injectionArmed = false;
+
+      //Ferma il run su tutte le board
+      SetMode(0);
+      //Attende lo svuotamento delle pipeline 30s prima della ripartenza
+      if (WaitForBoardsRunIdle(30000) != 0 || injectionMonitorStop) {
+        return;
+      }
+      //Cancella i buffer sugli HPS
+      for (auto board : det) {
+        board->CancelInjection();
+      }
+      //Azzera i contatori prima della nuova calibrazione
+      ResetBoards();
+      //Riparte usando i dati prodotti dal frontend, e non più gli injected
+      if (!injectionMonitorStop) {
+        SetMode(1);
+      }
+      return;
+    }
+
+    //Disabilita il flusso di iniezione quando tutte le board hanno finito
+    if (allFinished) {
+      //Rimuove il bit di iniezione dai prossimi comandi di avvio
+      for (auto board : det) {
+        board->SetInjectionEnable(0u);
+      }
+      injectionArmed = false;
+      printf("%s) Injected calibration completed: inject=0\n",
+             __METHOD_NAME__);
+      return;
+    }
+    //Attende cento millisecondi prima del controllo successivo
+    usleep(100000);
+  }
 }
 
 void daqserver::SetUpConfigClients(){
@@ -318,7 +526,8 @@ void daqserver::ListenCmd(){
 
   while (kListeningOn){
   
-    char msg[LEN];
+    //Azzera il buffer per garantire una stringa valida
+    char msg[LEN] = "";
 
     //Receive a command of kCmdLen numbers chars (each one in ASCII char),
     //+ 1 for the termination character
@@ -341,6 +550,8 @@ void daqserver::ListenCmd(){
     }
     else {
       //RX ok
+      //Inserisce il terminatore dopo i byte ricevuti
+      msg[std::min<ssize_t>(readret, LEN-1)] = '\0';
       ProcessCmdReceived(msg);
     }
 
@@ -362,7 +573,25 @@ void daqserver::ProcessCmdReceived(char* msg){
 
   if(strstr(msg, "cmd=") != NULL) { //out commands: "cmd=xxxx"
 
-    if (strcmp(msg, "cmd=Init") == 0){
+    //Riconosce il comando che arma un file locale sul server DAQ
+    if (strncmp(msg, "cmd=inject=1;path=", 18) == 0){
+      //Restituisce il risultato della lettura e preparazione del file
+      char reply[LEN] = "";
+      snprintf(reply, sizeof(reply), "%s",
+               ArmInjection(msg + 18) == 0 ?
+                 "INJECT-ARMED" : "INJECT-ERROR");
+      ReplyToCmd(reply);
+    }
+    //Riconosce il comando che cancella ogni dato di iniezione preparato
+    else if (strcmp(msg, "cmd=inject=0") == 0){
+      //Restituisce il risultato della cancellazione sulle board
+      char reply[LEN] = "";
+      snprintf(reply, sizeof(reply), "%s",
+               DisarmInjection() == 0 ?
+                 "INJECT-DISARMED" : "INJECT-ERROR");
+      ReplyToCmd(reply);
+    }
+    else if (strcmp(msg, "cmd=Init") == 0){
       printf("%s) Init()\n", __METHOD_NAME__);
       Init();
       ReplyToCmd(msg);
@@ -453,6 +682,14 @@ void daqserver::ProcessCmdReceived(char* msg){
           }
         }
 
+        //Usa i dati di iniezione solo quando il run richiede una calibrazione reale
+        const bool useInjection = injectionArmed.load() &&
+                                  forceCalibration && !dumpOnly;
+        //Aggiorna il bit di iniezione nel comando di ogni board
+        for (auto board : det) {
+          board->SetInjectionEnable(useInjection ? 1u : 0u);
+        }
+
         SetCalibrationMode(forceCalibration ? 1u : 0u);
         SetAutoCalibration(autoCalibration ? 1u : 0u);
         SetSaveCalibration(
@@ -497,6 +734,13 @@ void daqserver::ProcessCmdReceived(char* msg){
         //_3d = std::thread(&daqserver::Start, this, sruntype, runnum, unixtime);
         
         kStart = true;
+        if (useInjection) {
+          //Chiude un eventuale monitor terminato ma ancora associato al thread
+          StopInjectionMonitor();
+          injectionMonitorStop = false;
+          //Avvia il controllo asincrono dopo il comando di avvio delle board
+          injectionMonitor = std::thread(&daqserver::MonitorInjection, this);
+        }
         ReplyToCmd(msg);
       }
       else if(strcmp(stop,cmdgroup[2])==0) {//stop daq
@@ -732,6 +976,8 @@ void daqserver::Start(char* runtype, uint32_t runnum, uint32_t unixtime) {
 
 int daqserver::Stop(uint32_t &_nEvts) {
   if(kStart){
+    //Ferma il monitor prima di arrestare le board
+    StopInjectionMonitor();
     SetMode(0);
     if (WaitForBoardsRunIdle(30000) != 0) {
       // REG0 already blocks new triggers, but HPS senders and MAKA must stay

@@ -2,6 +2,7 @@
 #define DAQSERVER_H
 
 #include <vector>
+#include <atomic>
 #include <thread>
 
 #include "tcpServer.h"
@@ -26,6 +27,12 @@ private:
   std::string kdataPath = "./data/"; //!< Data file path
   volatile bool kStart; //!< Start event recording
   std::thread _3d;//!< Thread handle
+  //Controlla lo stato del flusso di iniezione durante il run
+  std::thread injectionMonitor;
+  //Richiede la chiusura del monitor di iniezione
+  std::atomic<bool> injectionMonitorStop{false};
+  //Indica che i dati sono pronti per il prossimo run
+  std::atomic<bool> injectionArmed{false};
   int calibmode;  //!< Calibration enable
   uint32_t mode;  //!< Complete PAPERO register-0 command word
   int trigtype;   //!< Trigger Type: if '1', internal
@@ -41,6 +48,15 @@ private:
     Printing the message received from the client(s)
   */
   void ProcessCmdReceived(char* msg);
+
+  //Carica il file e prepara i dati per ogni detector
+  int ArmInjection(const std::string& path);
+  //Annulla i dati di iniezione preparati su tutte le board
+  int DisarmInjection();
+  //Controlla completamento ed errori durante il run
+  void MonitorInjection();
+  //Ferma il monitor e attende la chiusura del thread
+  void StopInjectionMonitor();
   
   int recordEvents(FILE* fd);
   

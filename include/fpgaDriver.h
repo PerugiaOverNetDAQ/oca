@@ -21,6 +21,10 @@
 #define rBUSYADC_PARAM    8
 #define rBIAS_PARAM       9
 #define rTHR_PARAM        11
+//Riceve una word del payload di iniezione
+#define rINJECT_DATA      12
+//Controlla reset e fine del flusso di iniezione
+#define rINJECT_CTRL      13
 #define rGW_VER           16
 #define rINT_TS_MSB       17
 #define rINT_TS_LSB       18
@@ -33,9 +37,14 @@
 #define rFDI_FIFO_NUMWORD 25
 #define rBIAS_CURR_MON    26
 #define rCALIB_STATUS     27
+//Espone stato e livello della FIFO di iniezione
+#define rINJECT_STATUS    28
 #define rPIUMONE          31
 
 #include <inttypes.h>
+#include <atomic>
+#include <mutex>
+#include <thread>
 #include <vector>
 #include "axiFifo.h"
 
@@ -55,6 +64,28 @@ class fpgaDriver {
     //!< Partially consumed variable-length packet (SOP and length read).
     bool dataPacketPending = false;
     uint32_t dataPacketLength = 0;
+
+    //Serializza i pacchetti scritti nella FIFO di configurazione
+    std::mutex configMutex;
+    //Protegge la sequenza di indirizzo e lettura del registro
+    std::mutex readMutex;
+    //Alimenta la FIFO FPGA mentre la calibrazione consuma i dati
+    std::thread injectionThread;
+    //Richiede la chiusura del thread di alimentazione
+    std::atomic<bool> injectionStop{false};
+    //Conserva il payload completo nella memoria HPS
+    std::vector<uint32_t> injectionWords;
+    //Indica la prossima word ancora da trasferire
+    size_t injectionNext = 0;
+
+    //Attende che la FIFO di configurazione sia vuota
+    int WaitConfigFifoEmpty(uint32_t timeoutMs);
+    //Scrive un blocco di payload nel registro di iniezione
+    int WriteInjectionWords(size_t first, size_t count);
+    //Mantiene alimentata la FIFO di iniezione durante il run
+    void FeedInjection();
+    //Ferma il thread di alimentazione e attende la chiusura
+    void StopInjectionThread();
 
     //!< Compute the parity of an incoming unsigned 8-bit (gcc specific)
     inline bool Parity8(uint8_t dataIn){
@@ -129,6 +160,13 @@ class fpgaDriver {
     
     //!< Reset event counters without resetting calibration memories.
     void EventReset(){ResetCounters();};
+
+    //Memorizza il payload e precarica la FIFO FPGA
+    int PrepareInjection(const std::vector<uint32_t>& words);
+    //Ferma il feeder e libera il payload nella memoria HPS
+    void CancelInjection();
+    //Legge stato flag e livello della FIFO di iniezione
+    void GetInjectionStatus(uint32_t& status);
     
     //!< Activate the calibration mode
     void Calibrate(uint32_t calibIn);

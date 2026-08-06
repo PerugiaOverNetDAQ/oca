@@ -46,6 +46,8 @@ private:
   uint32_t autoCalib;
   uint32_t saveCalib;
   uint32_t applyThresholds;
+  //Indica se il prossimo run usa i dati di iniezione
+  uint32_t injectEnable;
 
   /*
     Check if detector performed the required actions of the command sent
@@ -62,6 +64,8 @@ public:
   virtual void SetCmdLenght(int lenght);//overrides the mothers' one
 
   void SetDetId(uint32_t _detid){ detId = _detid; }//FIX ME: not effective until an Init is sent
+  //Restituisce identificatore configurato per il detector
+  uint32_t GetDetId() const { return detId; }
   void SetPacketLen(uint32_t _pktLen){ pktLen = _pktLen; }//FIX ME: not effective until an Init is sent
   
   int readReg(int regAddr, uint32_t &regCont);
@@ -76,6 +80,14 @@ public:
   int GetCalibrationValid(bool& valid);
   //!< Read the fully-drained STOP acknowledgement.
   int GetRunIdle(bool& idle);
+  //Invia il payload al server HPS e prepara la FIFO FPGA
+  int PrepareInjection(const std::vector<uint32_t>& words);
+  //Annulla i dati di iniezione preparati sulla board
+  int CancelInjection();
+  //Legge lo stato del flusso di iniezione pubblicato dalla FPGA
+  int GetInjectionStatus(uint32_t& status);
+  //Aggiorna il bit di iniezione usato nel prossimo comando di avvio
+  void SetInjectionEnable(uint32_t enable){ injectEnable = enable & 1u; }
   void AskEvent();
   int GetEvent(std::vector<uint32_t>& evt, uint32_t& evtLen);
   int SetCalibrationMode(uint32_t calEnIn);

@@ -6,6 +6,8 @@
 #include "socal/hps.h"
 #include "socal/alt_gpio.h"
 #include <iostream>
+#include <algorithm>
+#include <chrono>
 #include "hwlib.h"
 #include <string.h>
 
@@ -17,6 +19,17 @@
 #include "fpgaDriver.h"
 #include "axiFifo.h"
 #include "paperoProtocol.h"
+
+namespace {
+//Capacità in word della FIFO usata dai pacchetti di configurazione
+constexpr uint32_t kConfigFifoDepth = 1024u;
+//Numero massimo di payload word inviate in ogni blocco
+constexpr size_t kInjectionChunkWords = 256u;
+//Numero di payload word caricate prima del comando di avvio
+constexpr size_t kInjectionPreloadWords = 3u * paperoProtocol::kHefPayloadWords;
+//Livello massimo usato per lasciare spazio a due blocchi
+constexpr uint32_t kInjectionBufferLimit = paperoProtocol::kInjectionFifoDepth - 2u * kInjectionChunkWords;
+}
 
 
 fpgaDriver::fpgaDriver(int verbose){
@@ -69,7 +82,7 @@ fpgaDriver::fpgaDriver(int verbose){
 };
 
 fpgaDriver::~fpgaDriver(){
-
+  StopInjectionThread();
 };
 
 uint8_t fpgaDriver::Parity32(uint32_t dataIn){
@@ -115,6 +128,8 @@ uint32_t fpgaDriver::CrcFinalize(uint32_t crc){
 }
 
 void fpgaDriver::ReadReg(int regAddr, uint32_t* data){
+  //Impedisce che due thread cambino indirizzo durante una lettura
+	std::lock_guard<std::mutex> lock(readMutex);
 	//Write the address of the register to be read
 	*raAddr = regAddr;
 	//Read the register content
@@ -132,6 +147,8 @@ void fpgaDriver::SingleWriteReg(uint32_t regAddr, uint32_t regContent){
 }
 
 int fpgaDriver::WriteReg(uint32_t* pktContent, int pktLen){
+  //Mantiene unito ogni pacchetto scritto nella FIFO di configurazione
+  std::lock_guard<std::mutex> lock(configMutex);
   uint32_t packet[pktLen+6];
   uint8_t parityMsb, parityLsb;
   uint32_t pktCrc;
@@ -167,13 +184,218 @@ int fpgaDriver::WriteReg(uint32_t* pktContent, int pktLen){
     }
   }
 
-  //Send the packet
-  confFifo->writeChunck(packet, pktLen+6);
+  //Calcola il numero totale di word inclusi header e footer
+  const uint32_t packetWords = static_cast<uint32_t>(pktLen + 6);
+  //Rifiuta pacchetti che non possono entrare nella FIFO
+  if (packetWords > kConfigFifoDepth) {
+    fprintf(stderr, "%s) Configuration packet is too large: %u words\n",
+            __METHOD_NAME__, packetWords);
+    return 1;
+  }
 
+  //Imposta il limite massimo per il tempo di attesa dello spazio libero. MAX 10 secondi
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  //Attende spazio sufficiente per scrivere il pacchetto completo
+  //Lo spazio è quello della fifo di configurazione 1024 word da 32 bit = 4096 byte 
+  while (confFifo->getUsedw() + packetWords > kConfigFifoDepth) {
+    //Overtime, interruzione scrittura
+    if (std::chrono::steady_clock::now() >= deadline) {
+      fprintf(stderr, "%s) Timeout waiting for configuration FIFO space\n", __METHOD_NAME__);
+      return 1;
+    }
+    usleep(100);
+  }
+  //Scrive tutte le word tramite accessi memory mapped alla FIFO
+  if (confFifo->writeChunck(packet, pktLen+6) < 0) {
+    return 1;
+  }
   return 0;
 }
 
+int fpgaDriver::WaitConfigFifoEmpty(uint32_t timeoutMs) {
+  //TImeouttime
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+  //Finché la fifo di configurazione non è vuota
+  while (!confFifo->getEmpty()) {
+    //Errore se overtime
+    if (std::chrono::steady_clock::now() >= deadline) {
+      fprintf(stderr, "%s) Timeout waiting for configuration FIFO drain\n", __METHOD_NAME__);
+      return 1;
+    }
+    usleep(100);
+  }
+  return 0;
+}
+
+//Passo la prima parola e quante ne devo trasferire
+int fpgaDriver::WriteInjectionWords(size_t first, size_t count) {
+  //Alloca una coppia valore e indirizzo per ogni payload word
+  //Quindi moltiplico il contatore pre 2
+  std::vector<uint32_t> writes(2u * count);
+  //Costruisce le scritture dirette al registro dati di iniezione
+  for (size_t i = 0; i < count; ++i) {
+    writes[2u*i] = injectionWords[first+i]; //Parola da scrivere
+    writes[2u*i+1u] = rINJECT_DATA; //12. Registro di destinazione 
+
+    //Parola Registro Parola Registro ...
+  }
+  //Invio il pacchetto con la FIFO di configurazione
+  if (WriteReg(writes.data(), static_cast<int>(writes.size())) != 0) {
+    return 1;
+  }
+  //Attende che il config receiver consumi tutte le scritture
+  //MAX 5 secondi
+  return WaitConfigFifoEmpty(5000);
+}
+
+void fpgaDriver::StopInjectionThread() {
+  //Comunica la terminazione
+  injectionStop = true;
+  //Attende la chiusura solo quando il thread esiste
+  if (injectionThread.joinable()) {
+    injectionThread.join();
+  }
+}
+
+void fpgaDriver::GetInjectionStatus(uint32_t& status) {
+  //Legge flag e livello dal registro pubblicato dalla FPGA
+  ReadReg(rINJECT_STATUS, &status); //INJ status è il 28
+}
+
+int fpgaDriver::PrepareInjection(const std::vector<uint32_t>& words) {
+  StopInjectionThread();
+  injectionWords = words; //Copia il payload ricevuto nella memoria HPS del driver
+  injectionNext = 0u;     //Riparte dalla prima word del nuovo payload
+  injectionStop = false;
+
+  //Azzera la FIFO di iniezione e lo stato della logica FPGA
+  SingleWriteReg(rINJECT_CTRL, 1u); //Scrivo nel registro di controllo 13 1 unsigned = bit0 = 1 e quindi RESET
+
+  //Attendo il reset
+  if (WaitConfigFifoEmpty(5000) != 0) {
+    return 1;
+  }
+
+  //Limita il preload a tre eventi (nella FIFO FPGA) o ai dati realmente disponibili
+  const size_t preload = std::min(injectionWords.size(), kInjectionPreloadWords);
+
+  //Trasferisce il preload  
+  while (injectionNext < preload) {
+    //Il minimo serve a caricare almeno 3 eventi completi oppure meno se ho finito gli eventi
+    const size_t count = std::min(kInjectionChunkWords, preload - injectionNext);
+
+    //Trasferimento effettivo, se non torna 0 c'è errore
+    if (WriteInjectionWords(injectionNext, count) != 0) {
+      return 1;
+    }
+    //Avanzo il count se il trasferimento è andato a buon fine
+    injectionNext += count;
+  }
+
+  //Segnala la fine del flusso quando tutto il payload è già precaricato
+  if (injectionNext == injectionWords.size()) {
+    SingleWriteReg(rINJECT_CTRL, 2u); // registro 13 INJECT CTRL valore 2, fine flusso
+
+    //Verifica che il segnale di fine flusso sia arrivato alla FPGA
+    if (WaitConfigFifoEmpty(5000) != 0) {
+      return 1;
+    }
+  }
+
+  //Imposta il limite massimo per la verifica del preload
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  uint32_t status = 0u;
+  //Legge il livello fino alla presenza di tutte le word precaricate
+  do {
+    GetInjectionStatus(status); //Leggo il registro 28 dell'FPGA con
+    //bit 0       active
+    //bit 1       failed
+    //bit 2       done
+    //bit 3       ready
+    //bit 15 a 4  altri campi o riservati
+    //bit 31 a 16 numero di word presenti nella FIFO
+
+    //Faccio shift e prendo solo il numero di WORD e lo confronto con quello da precaricare
+    //Se ho fatto torno 0
+    if ((status >> paperoProtocol::kInjectionUsedWordsShift) >= preload) {
+      return 0;
+    }
+
+    usleep(1000); //Aspetta 1sec e riverifica
+  } while (std::chrono::steady_clock::now() < deadline); //Se timeout allora errore
+
+  //Segnala che la FPGA non ha ricevuto il preload entro il timeout
+  fprintf(stderr, "%s) Injection preload did not reach the FPGA\n", __METHOD_NAME__);
+  return 1; //Errore
+}
+
+void fpgaDriver::FeedInjection() {
+  //Finche ci sono dati o è attivo l'invio
+  while (!injectionStop.load() && injectionNext < injectionWords.size()) {
+
+    uint32_t status = 0u;
+    GetInjectionStatus(status); //Lettura stato corrente
+
+    //Controllo sui flag di errore e completamento
+    const bool injectionFailed = (status & paperoProtocol::kInjectionFailedMask) != 0u;
+    const bool injectionDone = (status & paperoProtocol::kInjectionDoneMask) != 0u;
+    //Ferma quando la FPGA segnala errore o completamento
+    if (injectionFailed || injectionDone) {
+      break;
+    }
+
+    //Estrae il numero di word presenti nella FIFO di iniezione, con il classico shift di 16 per prendere il count
+    const uint32_t usedWords = status >> paperoProtocol::kInjectionUsedWordsShift;
+
+    //Attende quando il buffer ha raggiunto il livello massimo previsto
+    if (usedWords >= kInjectionBufferLimit) {
+      usleep(1000);
+      continue;
+    }
+
+    //Calcola quante word restano nella memoria HPS
+    const size_t remainingWords = injectionWords.size() - injectionNext;
+    //Calcola quante word possono essere aggiunte alla FIFO
+    const size_t availableWords = static_cast<size_t>(kInjectionBufferLimit - usedWords);
+
+    //Limita il blocco al minimo tra dimensione massima, dati rimasti e spazio libero
+    const size_t wordsToWrite = std::min({kInjectionChunkWords, remainingWords, availableWords});
+
+    //Stop se non c'è un blocco valido
+    if (wordsToWrite == 0u) {
+      break;
+    }
+
+    const int writeResult = WriteInjectionWords(injectionNext, wordsToWrite); //Trasferisce il blocco dalla memoria HPS alla FPGA
+
+    //Trasferimento fallito, allora stop
+    if (writeResult != 0) {
+      break;
+    }
+    injectionNext += wordsToWrite; //Avanza alla prima word che deve ancora essere trasferita
+  }
+
+  const bool allWordsTransferred = injectionNext == injectionWords.size(); //Payload non interamente trasferito
+  const bool feederStillActive = !injectionStop.load();  //Chiusura non richiesta
+
+  //Segnalo con INJECT CTRL che non arrivano altre word
+  if (feederStillActive && allWordsTransferred) {
+    SingleWriteReg(rINJECT_CTRL, 2u);
+    WaitConfigFifoEmpty(5000);
+  }
+}
+
+void fpgaDriver::CancelInjection() {
+  
+  StopInjectionThread(); //Ferma thread scrittura FPGA
+  SingleWriteReg(rINJECT_CTRL, 1u); //RESET
+  WaitConfigFifoEmpty(5000); //Attesa appl reset. 5sec
+  injectionWords.clear();
+  injectionNext = 0u; //Azzeramento posizione prossima word
+}
+
 void fpgaDriver::ResetFpga(){
+	StopInjectionThread(); //Ferma injection 
 	uint32_t data[4096];
 	int flushErr=0;
 	//Set to high the regArray bits of reset
@@ -218,6 +440,8 @@ void fpgaDriver::SetMode(uint32_t modeIn){
 }
 
 void fpgaDriver::StartAcquisition(uint32_t command, uint32_t thresholds){
+  //Chiude il feeder collegato al run precedente
+  StopInjectionThread();
   if ((command & paperoProtocol::kThresholdBit) != 0u) {
     // PAPERO samples REG11 together with the other fields on the
     // REG0.RUN_REQUEST rising edge. Keep both writes in one ordered packet.
@@ -233,9 +457,17 @@ void fpgaDriver::StartAcquisition(uint32_t command, uint32_t thresholds){
     SingleWriteReg(rGOTO_STATE,
                    command | paperoProtocol::kRunRequestBit);
   }
+
+  //Attende la consegna del comando prima di avviare il feeder
+  if ((command & paperoProtocol::kInjectBit) != 0u && WaitConfigFifoEmpty(5000) == 0) {
+    //Abilita e avvia il thread che alimenta la FIFO di iniezione
+    injectionStop = false;
+    injectionThread = std::thread(&fpgaDriver::FeedInjection, this);
+  }
 }
 
 void fpgaDriver::StopAcquisition(){
+  StopInjectionThread();
   SingleWriteReg(rGOTO_STATE, paperoProtocol::kStopCommand);
 }
 

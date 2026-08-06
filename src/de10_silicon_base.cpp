@@ -1,6 +1,7 @@
 ﻿#include "de10_silicon_base.h"
 #include "paperoProtocol.h"
 #include "utility.h"
+#include <algorithm>
 #include <unistd.h>
 
 uint32_t okVal = 0xb01af1ca;
@@ -42,6 +43,8 @@ de10_silicon_base::de10_silicon_base(std::string address, uint32_t port, paperoC
   autoCalib     = 0u;
   saveCalib     = calEn == 1 ? 1u : 0u;
   applyThresholds = 1u;
+  //Disabilita la sorgente di iniezione alla creazione del client
+  injectEnable  = 0u;
 
   //Send command length and set it with the loopback value
   //Cannot use specific function since it is the first time setting the length
@@ -244,6 +247,7 @@ int de10_silicon_base::SetMode(uint8_t modeIn) {
       calEn != 0u,
       autoCalib != 0u,
       saveCalib != 0u,
+      injectEnable != 0u, //Aggiunta di inj nel comando di start
       applyThresholds != 0u,
       daqMode);
 
@@ -311,6 +315,53 @@ int de10_silicon_base::GetRunIdle(bool& idle) {
            idle ? 1u : 0u, status);
   }
   return ret;
+}
+
+int de10_silicon_base::PrepareInjection(
+    const std::vector<uint32_t>& words) {
+  //Avvia il protocollo di preparazione con il server HPS
+  if (SendCmd("inject") != 0) {
+    return 1;
+  }
+
+  SendInt(static_cast<uint32_t>(words.size())); //Invia il numero di word prima del blocco binario
+  const char* data = reinterpret_cast<const char*>(words.data());
+  size_t remaining = words.size() * sizeof(uint32_t); //Num byte da inviare
+
+  //Continua fino a fine payload
+  while (remaining != 0u) {
+    //Limita ogni richiesta di invio a un megabyte
+    const int chunk = static_cast<int>(std::min<size_t>(remaining, 1024u * 1024u));
+    const int sent = Send(const_cast<char*>(data), chunk);
+
+    //Interrompe il trasferimento se la connessione termina o restituisce errore
+    if (sent <= 0) {
+      return 1;
+    }
+    //Sposta il puntatore dopo i byte già inviati
+    data += sent;
+    //Aggiorna il numero di byte che restano da inviare
+    remaining -= static_cast<size_t>(sent);
+  }
+
+  //Attende il risultato della preparazione eseguita dal server HPS
+  return checkReply("Preparing injection");
+}
+
+int de10_silicon_base::CancelInjection() {
+  //Disabilita la iniezione nel prossimo comando di avvio
+  injectEnable = 0u;
+  //Richiede allo HPS di fermare il feeder e pulire i dati
+  if (SendCmd("injectCancel") != 0) {
+    return 1;
+  }
+  //Controlla la conferma restituita dallo HPS
+  return checkReply("Cancelling injection");
+}
+
+int de10_silicon_base::GetInjectionStatus(uint32_t& status) {
+  //Legge flag e livello dal registro di stato della iniezione
+  return readReg(paperoProtocol::kInjectionStatusRegister, status);
 }
 
 void de10_silicon_base::AskEvent(){

@@ -18,10 +18,12 @@ int verbosity=0;
 namespace {
 void PrintUsage(const char* executable){
   printf("Usage:\n"
-         "\t%s <cal|daq|mix|dump> <0|1|int|ext> <save|nosave> [runnum]\n"
-         "\t%s dump [runnum]\n"
+         "\t%s <cal|daq|mix|dump> <0|1|int|ext> <save|nosave> "
+           "[runnum] [--inject <file.dat>]\n"
+         "\t%s dump [runnum] [--inject <file.dat>]\n"
          "Def:\n"
-         "\t%s <0|cal|1|beam|2|mix> [runnum]\n",
+         "\t%s <0|cal|1|beam|2|mix> [runnum] "
+           "[--inject <file.dat>]\n",
          executable, executable, executable);
 }
 
@@ -109,14 +111,23 @@ bool ParseRunNumber(const char* argument, unsigned int& runNumber) {
 int main(int argc, char *argv[]) {
   uint16_t controlWord = 0;
   int runNumberArgument = -1;
+  int effectiveArgc = argc;
+  std::string injectionPath;
 
-  if (argc == 2 || argc == 3) {
+  //Estrae il percorso quando il parametro di iniezione è alla fine
+  if (argc >= 3 && std::string(argv[argc-2]) == "--inject") {
+    injectionPath = argv[argc-1];
+    //Esclude il parametro di iniezione dal parser del comando di run
+    effectiveArgc -= 2;
+  }
+
+  if (effectiveArgc == 2 || effectiveArgc == 3) {
     if (!ParseLegacy(argv[1], controlWord)) {
       PrintUsage(argv[0]);
       return 1;
     }
-    if (argc == 3) runNumberArgument = 2;
-  } else if (argc == 4 || argc == 5) {
+    if (effectiveArgc == 3) runNumberArgument = 2;
+  } else if (effectiveArgc == 4 || effectiveArgc == 5) {
     run_control::RunMode mode;
     bool external = false;
     bool save = false;
@@ -128,7 +139,7 @@ int main(int argc, char *argv[]) {
       return 1;
     }
     controlWord = run_control::Encode(mode, external, save);
-    if (argc == 5) runNumberArgument = 4;
+    if (effectiveArgc == 5) runNumberArgument = 4;
   } else {
     PrintUsage(argv[0]);
     return 1;
@@ -157,6 +168,23 @@ int main(int argc, char *argv[]) {
   
   daqclient* daq = new daqclient(addressdaq, portdaq, verbosity);
   daq->SetCmdLenght(32);
+
+  if (!injectionPath.empty()) {
+    //Costruisce il comando testuale con il percorso del file
+    const std::string injectCommand = "cmd=inject=1;path=" + injectionPath;
+    //Rifiuta comandi che superano la dimensione del buffer TCP
+    if (injectCommand.size() > 256u) {
+      printf("Injection path is too long\n");
+      return 1;
+    }
+    //Invia il comando e attende la conferma 
+    char injectReply[LEN] = "";
+    if (daq->Send(injectCommand.c_str()) <= 0 || daq->ReceiveCmdReply(injectReply) <= 0 || strcmp(injectReply, "INJECT-ARMED") != 0) {
+      //Interrompe il run quando i dati di iniezione non sono pronti
+      printf("Cannot inject: %s\n", injectReply);
+      return 1;
+    }
+  }
 
   std::time_t timeNow = std::time(nullptr);
   uint32_t ts = (uint32_t)timeNow;
