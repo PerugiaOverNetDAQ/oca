@@ -348,12 +348,12 @@ void daqserver::ProcessCmdReceived(char* msg){
 	      else if ((strcmp(cal,runtype)==0) | (strcmp(calOffSpill,runtype)==0)) {
 	        sprintf(sruntype, "CAL");
 	        SetCalibrationMode(1);
-          SelectTrigger(1);
+          SelectTrigger(0); //Trigger esterno su calibrazione
 	      }
         else if (strcmp(mix,runtype)==0) {
 	        sprintf(sruntype, "MIX");
-	        SetCalibrationMode(0);
-          SelectTrigger(0);
+	        SetCalibrationMode(0); //Cal off
+          SelectTrigger(0); //Trigger esterno su mix
 	      }
 	      else {
 	        printf("%s) Not a valid run type %s\n", __METHOD_NAME__, runtype);
