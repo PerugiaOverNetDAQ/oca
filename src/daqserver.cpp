@@ -352,8 +352,8 @@ void daqserver::ProcessCmdReceived(char* msg){
 	      }
         else if (strcmp(mix,runtype)==0) {
 	        sprintf(sruntype, "MIX");
-	        SetCalibrationMode(1);
-          SelectTrigger(1);
+	        SetCalibrationMode(0);
+          SelectTrigger(0);
 	      }
 	      else {
 	        printf("%s) Not a valid run type %s\n", __METHOD_NAME__, runtype);

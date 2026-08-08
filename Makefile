@@ -26,7 +26,9 @@ endif
 
 UNAME_S := $(shell uname -s)
 
-CROSS_COMPILE = arm-linux-gnueabihf
+CROSS_TOOLCHAIN ?= $(HOME)/INFN/cross-comp/gcc-linaro-6.2.1-2016.11-x86_64_arm-linux-gnueabihf
+CROSS_COMPILE ?= $(CROSS_TOOLCHAIN)/bin/arm-linux-gnueabihf
+#CROSS_COMPILE = arm-linux-gnueabihf
 CCARM = $(CROSS_COMPILE)-g++
 LDARM = $(CROSS_COMPILE)-g++
 
@@ -44,7 +46,8 @@ endif
 # DE10 specific:
 ALT_DEVICE_FAMILY ?= soc_cv_av
 #SOCEDS_DEST_ROOT = /home/depa/intelFPGA/20.1/embedded
-HWLIBS_ROOT = $(SOCEDS_DEST_ROOT)/ip/altera/hps/altera_hps/hwlib
+#HWLIBS_ROOT = $(SOCEDS_DEST_ROOT)/ip/altera/hps/altera_hps/hwlib
+HWLIBS_ROOT ?= $(HOME)/INFN/cross-comp/intel-socfpga-hwlib/armv7a/hwlib
 
 # Flags and includes:
 INCLUDE := -I$(INC)
