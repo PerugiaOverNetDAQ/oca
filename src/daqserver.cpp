@@ -613,9 +613,9 @@ void daqserver::Stop(uint32_t &_nEvts) {
     kStart = false;
     SetMode(0);
     maka->runStop(_nEvts);
+    sleep(10);
     printf("%s) Events: %d \n", __METHOD_NAME__, _nEvts);
     runStop();
-    sleep(10);
   }
   
   if (kVerbosity > 0) printf("%s) Run stopped succesfully\n", __METHOD_NAME__);
