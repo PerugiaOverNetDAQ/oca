@@ -471,7 +471,6 @@ int de10_silicon_base::SetBias(string _bias0, string _bias1){
   else {
     ret = 1;
   }
-
   ret += checkReply("Setting Biases");
   
   return ret;
@@ -496,6 +495,10 @@ int de10_silicon_base::GetBiasCurr(float& _curr0, float& _curr1, uint8_t& _flags
 
 int de10_silicon_base::runStart() {
   int ret = 0;
+  
+  if (SetConfigBias()!=0) {
+    ret = 1;
+  }
   if (SendCmd("runStart")!=0) {
     ret = 1;
   }

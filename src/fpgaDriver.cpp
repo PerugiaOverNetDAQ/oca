@@ -289,7 +289,7 @@ void fpgaDriver::biasTranslate(float biasIn, uint32_t &dacOut) {
   // Vctrl = 0.015228 Vout -> DAC = 0.015228*Vout*1023/2.5 = 6.231472*Vout
   //
   // 70V -> 1.066V -> 436 , 0x1B4; 50V -> 0.761V -> 312, 0x138;
-  const float kConv = (1023/2.5)*(15e3/1e6-15e3);
+  const float kConv = (1023/2.5)*(15e3/(1e6-15e3));
   dacOut = (uint32_t)(biasIn*kConv) & 0x000003FF;
 }
 
