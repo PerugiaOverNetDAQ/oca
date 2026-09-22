@@ -76,25 +76,32 @@ def save_oca_config(data, filepath=DEFAULT_OCA_PATH):
     dir_name = os.path.dirname(filepath)
     if dir_name:
         os.makedirs(dir_name, exist_ok=True)
+
+    #Loading pre-existing data to avoid losing manually written C++ fields
+    current_data = load_oca_config(filepath)
+
+    #Update only the data collected by the GUI (data)
+    current_data.update(data)
         
     config = get_config_parser() 
-
+    
+    #current_data instead of data to use the combined values
     config["GLOBAL"] = {
         # GUI-managed fields
-        "oca_ip": str(data.get("oca_ip", "")),
-        "maka_dir": str(data.get("maka_dir", "")),
-        "write_file": str(data.get("write_file", False)),
-        "send_om": str(data.get("send_om", False)),
-        "om_prescaler": str(data.get("om_prescaler", 0)),
+        "oca_ip": str(current_data.get("oca_ip", "")),
+        "maka_dir": str(current_data.get("maka_dir", "")),
+        "write_file": str(current_data.get("write_file", False)),
+        "send_om": str(current_data.get("send_om", False)),
+        "om_prescaler": str(current_data.get("om_prescaler", 0)),
 
         # C++ Backend extra fields
-        "listenClient": str(data.get("listenClient", False)),
-        "portClient": str(data.get("portClient", 0)),
-        "clientCmdLen": str(data.get("clientCmdLen", 0)),
-        "makaPort": str(data.get("makaPort", 0)),
-        "makaCmdLen": str(data.get("makaCmdLen", 0)),
-        "calMode": str(data.get("calMode", False)),
-        "intTrigEn": str(data.get("intTrigEn", False))
+        "listenClient": str(current_data.get("listenClient", False)),
+        "portClient": str(current_data.get("portClient", 0)),
+        "clientCmdLen": str(current_data.get("clientCmdLen", 0)),
+        "makaPort": str(current_data.get("makaPort", 0)),
+        "makaCmdLen": str(current_data.get("makaCmdLen", 0)),
+        "calMode": str(current_data.get("calMode", False)),
+        "intTrigEn": str(current_data.get("intTrigEn", False))
     }
     
     with open(filepath, "w") as configfile:
@@ -169,37 +176,46 @@ def save_papero_config(data_list, filepath=DEFAULT_PAPERO_PATH):
     dir_name = os.path.dirname(filepath)
     if dir_name:
         os.makedirs(dir_name, exist_ok=True)
+
+    #Loading the existing configuration of the 10 PAPERI
+    current_list = load_papero_config(filepath)
+
+    #Row-by-row data merge
+    for i in range(10):
+        if i < len(data_list):
+            current_list[i].update(data_list[i])
         
     config = get_config_parser() 
-    for i, data in enumerate(data_list):
+    #current_data instead of data to use the combined values
+    for i, current_data in enumerate(current_list):
         section_name = f"PAPERO_{i+1}"
         config[section_name] = {
             # GUI-managed fields
-            "enable": str(data.get("enable", False)),
-            "ip": str(data.get("ip", "")),
-            "trigger": str(data.get("trigger", 0)),
-            "test_mode": str(data.get("test_mode", False)),
-            "test_channel": str(data.get("test_channel", 0)),
-            "bias0": str(data.get("bias0", 0.0)),
-            "bias1": str(data.get("bias1", 0.0)),
+            "enable": str(current_data.get("enable", False)),
+            "ip": str(current_data.get("ip", "")),
+            "trigger": str(current_data.get("trigger", 0)),
+            "test_mode": str(current_data.get("test_mode", False)),
+            "test_channel": str(current_data.get("test_channel", 0)),
+            "bias0": str(current_data.get("bias0", 0.0)),
+            "bias1": str(current_data.get("bias1", 0.0)),
             
             # C++ Backend extra fields
-            "id": str(data.get("id", i + 1)),
-            "tcpPort": str(data.get("tcpPort", 0)),
-            "cmdLen": str(data.get("cmdLen", 0)),
-            "testUnitCfg": str(data.get("testUnitCfg", 0)),
-            "hkEn": str(data.get("hkEn", False)),
-            "dataEn": str(data.get("dataEn", False)),
-            "pktLen": str(data.get("pktLen", 0)),
-            "feClkDiv": str(data.get("feClkDiv", 0)),
-            "feClkDuty": str(data.get("feClkDuty", 0)),
-            "adcClkDiv": str(data.get("adcClkDiv", 0)),
-            "adcClkDuty": str(data.get("adcClkDuty", 0)),
-            "trig2Hold": str(data.get("trig2Hold", 0)),
-            "adcFast": str(data.get("adcFast", False)),
-            "busyLen": str(data.get("busyLen", 0)),
-            "adcDelay": str(data.get("adcDelay", 0)),
-            "ideTest": str(data.get("ideTest", False))
+            "id": str(current_data.get("id", i + 1)),
+            "tcpPort": str(current_data.get("tcpPort", 0)),
+            "cmdLen": str(current_data.get("cmdLen", 0)),
+            "testUnitCfg": str(current_data.get("testUnitCfg", 0)),
+            "hkEn": str(current_data.get("hkEn", False)),
+            "dataEn": str(current_data.get("dataEn", False)),
+            "pktLen": str(current_data.get("pktLen", 0)),
+            "feClkDiv": str(current_data.get("feClkDiv", 0)),
+            "feClkDuty": str(current_data.get("feClkDuty", 0)),
+            "adcClkDiv": str(current_data.get("adcClkDiv", 0)),
+            "adcClkDuty": str(current_data.get("adcClkDuty", 0)),
+            "trig2Hold": str(current_data.get("trig2Hold", 0)),
+            "adcFast": str(current_data.get("adcFast", False)),
+            "busyLen": str(current_data.get("busyLen", 0)),
+            "adcDelay": str(current_data.get("adcDelay", 0)),
+            "ideTest": str(current_data.get("ideTest", False))
         }
         
     with open(filepath, "w") as configfile:
