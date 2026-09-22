@@ -193,6 +193,7 @@ def save_papero_config(data_list, filepath=DEFAULT_PAPERO_PATH):
             # GUI-managed fields
             "enable": str(current_data.get("enable", False)),
             "ip": str(current_data.get("ip", "")),
+            "send_maka": str(current_data.get("send_maka", False)),
             "trigger": str(current_data.get("trigger", 0)),
             "test_mode": str(current_data.get("test_mode", False)),
             "test_channel": str(current_data.get("test_channel", 0)),
