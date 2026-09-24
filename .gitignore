@@ -63,3 +63,5 @@ config/oca.cfg
 config/papero.cfg
 data/
 sysctl_mem.cfg
+
+.venv

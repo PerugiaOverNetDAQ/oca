@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QProcess
 from PySide6.QtGui import QCloseEvent
 from pathlib import Path
+from time import sleep
 
 import config_parser
 
@@ -35,7 +36,7 @@ class HerdDaqWindow(QMainWindow):
         # Flag for closing/crash management
         self.intentional_stop = False
         
-        self.EXE_FOLDER="../exe/"
+        self.EXE_FOLDER="./exe/" #Always start from config_parser.ROOT_DIR
 
 
     # =========================================================================
@@ -318,6 +319,8 @@ class HerdDaqWindow(QMainWindow):
         """Triggers OCA daemon once MAKA is confirmed RUNNING."""
         print("[INFO] MAKA avviato con successo. Lancio di OCA in cascata...")
         
+        # Wait before launching OCA
+        sleep(5)
         self.p_oca.start(f"{self.EXE_FOLDER}/OCA", ["-v", "1"])
         
     def on_startup_completed(self, exit_code, exit_status):
@@ -375,7 +378,6 @@ class HerdDaqWindow(QMainWindow):
         """Handles START sequence: locking UI, saving configs, launching processes."""
         # Reset crash monitoring state for new execution cycle
         self.intentional_stop = False
-        #self.set_ui_interlocked(locked=True)
         
         if not self.oca_ip_input.text():
             print("[WARNING] Indirizzo IP OCA non inserito!")
@@ -383,8 +385,9 @@ class HerdDaqWindow(QMainWindow):
         self.dump_ui_to_files()
         
         # Check MAKA and OCA executables
-        MakaExe = Path(f"{self.EXE_FOLDER}/MAKA").resolve()
-        OcaExe = Path(f"{self.EXE_FOLDER}/OCA").resolve()
+        root_dir = str(config_parser.ROOT_DIR)
+        MakaExe = Path(f"{root_dir}/{self.EXE_FOLDER}/MAKA").resolve()
+        OcaExe = Path(f"{root_dir}/{self.EXE_FOLDER}/OCA").resolve()
 
         if not((MakaExe.exists() and MakaExe.is_file())):
             print(f"Missing {MakaExe}")
@@ -398,9 +401,11 @@ class HerdDaqWindow(QMainWindow):
         run_type = self.run_type_combo.currentText()
         run_arg = "0" if run_type == "CAL" else "1"
         
+        # Wait before launching start
+        sleep(5)
         print(f"[INFO] Demoni attivi. Lancio STARTOCA per run di tipo {run_type} {run_arg}")
         self.p_startoca.setWorkingDirectory(str(config_parser.ROOT_DIR))
-        self.p_startoca.start(f"{self.EXE_FOLDER}/STARTOCA", [run_arg])
+        self.p_startoca.start(f"{self.EXE_FOLDER}/startOCA", [run_arg])
 
     def on_stop_clicked(self):
         """Handles STOP sequence: executing STOPOCA and terminating daemons."""
@@ -411,12 +416,10 @@ class HerdDaqWindow(QMainWindow):
         
         self.p_stopoca = QProcess(self)
         self.p_stopoca.setWorkingDirectory(str(config_parser.ROOT_DIR))
-        self.p_stopoca.start(f"{self.EXE_FOLDER}/STOPOCA")
+        self.p_stopoca.start(f"{self.EXE_FOLDER}/stopOCA")
         
         self.p_oca.terminate()
         self.p_maka.terminate()
-        
-        self.set_ui_interlocked(locked=False)
 
 
     # =========================================================================
