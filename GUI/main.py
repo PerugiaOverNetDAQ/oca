@@ -1,12 +1,12 @@
 import sys  
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QApplication, QMainWindow, QSplitter, QWidget, QVBoxLayout, QHBoxLayout,
     QFormLayout, QGridLayout, QGroupBox, QLabel, QLineEdit,
     QCheckBox, QSpinBox, QDoubleSpinBox, QComboBox, QPushButton,
-    QMessageBox
+    QMessageBox, QPlainTextEdit, QTextEdit
 )
 from PySide6.QtCore import Qt, QProcess
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QTextCursor
 from pathlib import Path
 from time import sleep
 
@@ -17,16 +17,44 @@ class HerdDaqWindow(QMainWindow):
         super().__init__()  
         
         self.setWindowTitle("HERD DAQ Control Interface")
-        self.resize(1000, 750)  
+        #self.resize(1800, 750)
         
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
+
+        main_layout = QHBoxLayout(central_widget)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+
+        splitter.addWidget(left_widget)
+        splitter.addWidget(right_widget)
+
+        main_layout.addWidget(splitter)
+
+        splitter.setSizes([1200, 600])
+        splitter.setChildrenCollapsible(False)
+
+        right_widget.setMinimumWidth(700)
+        
+        # Splitter line color
+        #splitter.setStyleSheet("""
+        #    QSplitter::handle {
+        #        background-color: #666666;
+        #        width: 6px;
+        #    }
+        #""")
         
         # UI Setup
-        self.init_global_settings(main_layout)
-        self.init_papero_grid(main_layout)
-        self.init_execution_panel(main_layout)
+        self.init_global_settings(left_layout)
+        self.init_papero_grid(left_layout)
+        self.init_execution_panel(left_layout)
+        self.init_log_panels(right_layout)
         
         # Initialize background daemon handlers and state management
         self.init_processes()
@@ -175,7 +203,98 @@ class HerdDaqWindow(QMainWindow):
         layout.addWidget(self.stop_btn)
         
         parent_layout.addWidget(group_box)
+    
+    def init_log_panels(self, parent_layout):    
+        python_group = QGroupBox("Python / startOCA / stopOCA")
+        python_layout = QVBoxLayout(python_group)
 
+        self.python_log = QTextEdit()
+        self.python_log.setReadOnly(True)
+        self.python_log.setMaximumHeight(120)
+        self.apply_terminal_style(self.python_log)
+
+        python_layout.addWidget(self.python_log)
+
+        maka_group = QGroupBox("MAKA")
+        maka_layout = QVBoxLayout(maka_group)
+
+        self.maka_log = QTextEdit()
+        self.maka_log.setReadOnly(True)
+        self.apply_terminal_style(self.maka_log)
+
+        maka_layout.addWidget(self.maka_log)
+
+        oca_group = QGroupBox("OCA")
+        oca_layout = QVBoxLayout(oca_group)
+
+        self.oca_log = QTextEdit()
+        self.oca_log.setReadOnly(True)
+        self.apply_terminal_style(self.oca_log)
+
+        oca_layout.addWidget(self.oca_log)
+
+        parent_layout.addWidget(python_group, 1)
+        parent_layout.addWidget(maka_group, 5)
+        parent_layout.addWidget(oca_group, 5)
+    
+    def append_terminal(self, widget, text):
+        widget.moveCursor(QTextCursor.MoveOperation.End)
+        widget.insertPlainText(text)
+        widget.ensureCursorVisible()
+    
+    def log_python(self, text):
+        color = "#FFFFFF"
+        if "ERROR" in text:
+            color = "#EF2929"
+        elif "WARNING" in text:
+            color = "#FCE94F"
+        elif "SUCCESS" in text:
+            color = "#8AE234"
+        self.python_log.append(f'<span style="color:{color};">{text}</span>')
+
+    def log_maka(self, text):
+        color = "#FFFFFF"
+        if "ERROR" in text:
+            color = "#EF2929"
+        elif "WARNING" in text:
+            color = "#FCE94F"
+        elif "SUCCESS" in text:
+            color = "#8AE234"
+        self.maka_log.append(f'<span style="color:{color};">{text}</span>')
+
+    def log_oca(self, text):
+        color = "#FFFFFF"
+        if "ERROR" in text:
+            color = "#EF2929"
+        elif "WARNING" in text:
+            color = "#FCE94F"
+        elif "SUCCESS" in text:
+            color = "#8AE234"
+        self.oca_log.append(f'<span style="color:{color};">{text}</span>')
+
+    # Terminal style
+    def apply_terminal_style(self, widget):
+        # Ubuntu-like
+        #widget.setStyleSheet("""
+        #    QTextEdit {
+        #        background-color: #300A24;
+        #        color: #FFFFFF;
+        #        border: 1px solid #555555;
+        #        font-family: 'Ubuntu Mono';
+        #        font-size: 10pt;
+        #        selection-background-color: #4E9A06;
+        #    }
+        #""")
+        widget.setStyleSheet("""
+            QTextEdit {
+                background-color: #000000;
+                color: #E6E6E6;
+                border: 1px solid #444444;
+                font-family: 'Ubuntu Mono';
+                font-size: 10pt;
+                selection-background-color: #4E9A06;
+            }
+        """)
 
     # ==========================================
     # GUI CONNECTION LOGIC <-> PARSER
@@ -203,7 +322,7 @@ class HerdDaqWindow(QMainWindow):
 
     def dump_ui_to_files(self):
         """Extracts current UI state and writes configuration files to disk."""
-        print("[INFO] Avvio serializzazione dei parametri su file...")
+        self.log_python("[INFO] Avvio serializzazione dei parametri su file...")
 
         # Package OCA UI data into dictionary schema expected by config_parser
         oca_data = {
@@ -228,7 +347,7 @@ class HerdDaqWindow(QMainWindow):
                 "test_channel": row["test_channel"].value()
             })
         config_parser.save_papero_config(papero_data_list)
-        print("[SUCCESS] Parametri salvati con successo in oca.cfg e papero.cfg!")
+        self.log_python("[SUCCESS] Parametri salvati con successo in oca.cfg e papero.cfg!")
 
     
     # =========================================================================
@@ -245,48 +364,50 @@ class HerdDaqWindow(QMainWindow):
         self.p_maka.setWorkingDirectory(root_dir)
         self.p_oca.setWorkingDirectory(root_dir)
 
-        print("[INFO] Istanze QProcess per MAKA e OCA create correttamente.")
+        self.log_python("[INFO] Istanze QProcess per MAKA e OCA create correttamente.")
 
-        # See MAKA/OCA errors
+        # See MAKA/OCA errors on dedicated windows
         self.p_maka.errorOccurred.connect(
-            lambda err: print(f"[MAKA ERROR] {err} - {self.p_maka.errorString()}")
+            lambda err: self.log_maka(f"[ERROR] {err} - {self.p_maka.errorString()}")
         )
         self.p_oca.errorOccurred.connect(
-            lambda err: print(f"[OCA ERROR] {err} - {self.p_oca.errorString()}")
+            lambda err: self.log_oca(f"[ERROR] {err} - {self.p_oca.errorString()}")
         )
         
-        ## See MAKA/OCA stdout prints
-        #self.p_maka.readyReadStandardOutput.connect(
-        #    lambda: print(self.p_maka.readAllStandardOutput().data().decode())
-        #)
-        #self.p_oca.readyReadStandardOutput.connect(
-        #    lambda: print(self.p_oca.readAllStandardOutput().data().decode())
-        #)
-        
-        ## See MAKA/OCA stderr prints
-        #self.p_maka.readyReadStandardError.connect(
-        #    lambda: print("[MAKA STDERR]", self.p_maka.readAllStandardError().data().decode())
-        #)
-        #self.p_oca.readyReadStandardError.connect(
-        #    lambda: print("[OCA STDERR]", self.p_oca.readAllStandardError().data().decode())
-        #)
-        
-        # Merge MAKA/OCA stdout and stderr and print them
-        self.p_maka.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        self.p_oca.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        # See MAKA/OCA stdout prints on dedicated windows
         self.p_maka.readyReadStandardOutput.connect(
-            lambda: print(self.p_maka.readAllStandardOutput().data().decode())
+            lambda: self.append_terminal(
+                self.maka_log,
+                bytes(self.p_maka.readAllStandardOutput()).decode(errors="replace")
+            )
         )
         self.p_oca.readyReadStandardOutput.connect(
-            lambda: print(self.p_oca.readAllStandardOutput().data().decode())
+            lambda: self.append_terminal(
+                self.oca_log,
+                bytes(self.p_oca.readAllStandardOutput()).decode(errors="replace")
+            )
+        )
+        
+        # See MAKA/OCA stderr prints on dedicated windows
+        self.p_maka.readyReadStandardError.connect(
+            lambda: self.append_terminal(
+                self.maka_log,
+                bytes(self.p_maka.readAllStandardError()).decode(errors="replace")
+            )
+        )
+        self.p_oca.readyReadStandardError.connect(
+            lambda: self.append_terminal(
+                self.oca_log,
+                bytes(self.p_oca.readAllStandardError()).decode(errors="replace")
+            )
         )
         
         # See MAKA/OCA return code
         self.p_maka.finished.connect(
-            lambda code, status: print(f"MAKA finished: code={code} status={status}")
+            lambda code, status: self.log_python(f"MAKA finished: code={code} status={status}")
         )
         self.p_oca.finished.connect(
-            lambda code, status: print(f"OCA finished: code={code} status={status}")
+            lambda code, status: self.log_python(f"OCA finished: code={code} status={status}")
         )
         
         # Startup sequence cascade: MAKA -> OCA
@@ -299,7 +420,7 @@ class HerdDaqWindow(QMainWindow):
         self.p_maka.stateChanged.connect(lambda state: self.update_status_label(self.maka_status_lbl, state))
         self.p_oca.stateChanged.connect(lambda state: self.update_status_label(self.oca_status_lbl, state))
         
-        print("[INFO] Istanze QProcess create e segnali di concatenazione (MAKA->OCA) configurati.")
+        self.log_python("[INFO] Istanze QProcess create e segnali di concatenazione (MAKA->OCA) configurati.")
         self.stop_btn.clicked.connect(self.on_stop_clicked)
         
         # Crash monitoring
@@ -311,13 +432,13 @@ class HerdDaqWindow(QMainWindow):
 
     def start_daemons_sequence(self):
         """Initiates daemon execution starting with MAKA."""
-        print("[INFO] Inizio sequenza di avvio asincrona: Lancio MAKA...")
+        self.log_python("[INFO] Inizio sequenza di avvio asincrona: Lancio MAKA...")
         
         self.p_maka.start(f"{self.EXE_FOLDER}/MAKA", ["5555", "2"]) 
 
     def start_oca_daemon(self):
         """Triggers OCA daemon once MAKA is confirmed RUNNING."""
-        print("[INFO] MAKA avviato con successo. Lancio di OCA in cascata...")
+        self.log_python("[INFO] MAKA avviato con successo. Lancio di OCA in cascata...")
         
         # Wait before launching OCA
         sleep(5)
@@ -325,17 +446,17 @@ class HerdDaqWindow(QMainWindow):
         
     def on_startup_completed(self, exit_code, exit_status):
         if exit_code == 0:
-            print("[SUCCESS] Startup completato")
+            self.log_python("[SUCCESS] Startup completato")
             self.set_ui_interlocked(True)
         else:
-            print(f"[ERROR] STARTOCA fallito (exit={exit_code})")
+            self.log_python(f"[ERROR] startOCA fallito (exit={exit_code})")
     
     def on_stop_completed(self, exit_code, exit_status):
         if exit_code == 0:
-            print("[SUCCESS] Stop completato")
+            self.log_python("[SUCCESS] Stop completato")
             self.set_ui_interlocked(False)
         else:
-            print(f"[ERROR] STOPOCA fallito (exit={exit_code})")
+            self.log_python(f"[ERROR] stopOCA fallito (exit={exit_code})")
 
     def update_status_label(self, label: QLabel, state: QProcess.ProcessState):
         """Updates status badge style and text based on QProcess state."""
@@ -380,7 +501,7 @@ class HerdDaqWindow(QMainWindow):
         self.intentional_stop = False
         
         if not self.oca_ip_input.text():
-            print("[WARNING] Indirizzo IP OCA non inserito!")
+            self.log_python("[WARNING] Indirizzo IP OCA non inserito!")
             
         self.dump_ui_to_files()
         
@@ -390,31 +511,30 @@ class HerdDaqWindow(QMainWindow):
         OcaExe = Path(f"{root_dir}/{self.EXE_FOLDER}/OCA").resolve()
 
         if not((MakaExe.exists() and MakaExe.is_file())):
-            print(f"Missing {MakaExe}")
+            self.log_python(f"Missing {MakaExe}")
         if not((OcaExe.exists() and OcaExe.is_file())):
-            print(f"Missing {OcaExe}")
+            self.log_python(f"Missing {OcaExe}")
             
         self.start_daemons_sequence()
         
     def on_oca_started(self):
-        """Executes STARTOCA command once daemons are active."""
+        """Executes startOCA command once daemons are active."""
         run_type = self.run_type_combo.currentText()
         run_arg = "0" if run_type == "CAL" else "1"
         
         # Wait before launching start
         sleep(5)
-        print(f"[INFO] Demoni attivi. Lancio STARTOCA per run di tipo {run_type} {run_arg}")
+        self.log_python(f"[INFO] Demoni attivi. Lancio startOCA per run di tipo {run_type} {run_arg}")
         self.p_startoca.setWorkingDirectory(str(config_parser.ROOT_DIR))
-        self.p_startoca.start(f"{self.EXE_FOLDER}/startOCA", [run_arg])
+        #self.p_startoca.start(f"{self.EXE_FOLDER}/startOCA", [run_arg])
 
     def on_stop_clicked(self):
-        """Handles STOP sequence: executing STOPOCA and terminating daemons."""
-        print("[INFO] Pulsante STOP premuto. Esecuzione STOPOCA e terminazione demoni...")
+        """Handles STOP sequence: executing stopOCA and terminating daemons."""
+        self.log_python("[INFO] Pulsante STOP premuto. Esecuzione stopOCA e terminazione demoni...")
 
         # Flag set to True to prevent triggering handle_process_crash
         self.intentional_stop = True
         
-        self.p_stopoca = QProcess(self)
         self.p_stopoca.setWorkingDirectory(str(config_parser.ROOT_DIR))
         self.p_stopoca.start(f"{self.EXE_FOLDER}/stopOCA")
         
@@ -431,7 +551,7 @@ class HerdDaqWindow(QMainWindow):
             return
 
         if exit_status == QProcess.ExitStatus.CrashExit:
-            print(f"[CRITICAL] Rilevato crash del processo {process_name}!")
+            self.log_python(f"[CRITICAL] Rilevato crash del processo {process_name}!")
                 
             QMessageBox.critical(
                 self, 
@@ -448,7 +568,7 @@ class HerdDaqWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent):
         """Ensures clean process termination upon window closure."""
-        print("[INFO] Richiesta di chiusura GUI. Pulizia processi in corso...")
+        self.log_python("[INFO] Richiesta di chiusura GUI. Pulizia processi in corso...")
 
         self.intentional_stop = True
         
@@ -457,7 +577,7 @@ class HerdDaqWindow(QMainWindow):
         if self.p_oca.state() != QProcess.ProcessState.NotRunning:
             self.p_oca.kill()
             
-        print("[SUCCESS] Processi terminati.")
+        self.log_python("[SUCCESS] Processi terminati.")
         event.accept() 
     
 
