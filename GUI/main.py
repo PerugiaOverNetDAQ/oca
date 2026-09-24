@@ -34,6 +34,8 @@ class HerdDaqWindow(QMainWindow):
 
         # Flag for closing/crash management
         self.intentional_stop = False
+        
+        self.EXE_FOLDER="../exe/"
 
 
     # =========================================================================
@@ -235,6 +237,8 @@ class HerdDaqWindow(QMainWindow):
         """Instantiates QProcess objects and configures process signals."""
         self.p_maka = QProcess(self)
         self.p_oca = QProcess(self)
+        self.p_startoca = QProcess(self)
+        self.p_stopoca = QProcess(self)
 
         root_dir = str(config_parser.ROOT_DIR)
         self.p_maka.setWorkingDirectory(root_dir)
@@ -242,9 +246,53 @@ class HerdDaqWindow(QMainWindow):
 
         print("[INFO] Istanze QProcess per MAKA e OCA create correttamente.")
 
+        # See MAKA/OCA errors
+        self.p_maka.errorOccurred.connect(
+            lambda err: print(f"[MAKA ERROR] {err} - {self.p_maka.errorString()}")
+        )
+        self.p_oca.errorOccurred.connect(
+            lambda err: print(f"[OCA ERROR] {err} - {self.p_oca.errorString()}")
+        )
+        
+        ## See MAKA/OCA stdout prints
+        #self.p_maka.readyReadStandardOutput.connect(
+        #    lambda: print(self.p_maka.readAllStandardOutput().data().decode())
+        #)
+        #self.p_oca.readyReadStandardOutput.connect(
+        #    lambda: print(self.p_oca.readAllStandardOutput().data().decode())
+        #)
+        
+        ## See MAKA/OCA stderr prints
+        #self.p_maka.readyReadStandardError.connect(
+        #    lambda: print("[MAKA STDERR]", self.p_maka.readAllStandardError().data().decode())
+        #)
+        #self.p_oca.readyReadStandardError.connect(
+        #    lambda: print("[OCA STDERR]", self.p_oca.readAllStandardError().data().decode())
+        #)
+        
+        # Merge MAKA/OCA stdout and stderr and print them
+        self.p_maka.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        self.p_oca.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        self.p_maka.readyReadStandardOutput.connect(
+            lambda: print(self.p_maka.readAllStandardOutput().data().decode())
+        )
+        self.p_oca.readyReadStandardOutput.connect(
+            lambda: print(self.p_oca.readAllStandardOutput().data().decode())
+        )
+        
+        # See MAKA/OCA return code
+        self.p_maka.finished.connect(
+            lambda code, status: print(f"MAKA finished: code={code} status={status}")
+        )
+        self.p_oca.finished.connect(
+            lambda code, status: print(f"OCA finished: code={code} status={status}")
+        )
+        
         # Startup sequence cascade: MAKA -> OCA
         self.p_maka.started.connect(self.start_oca_daemon)
         self.p_oca.started.connect(self.on_oca_started)
+        self.p_startoca.finished.connect(self.on_startup_completed) #When finishing start operations, disable buttons
+        self.p_stopoca.finished.connect(self.on_stop_completed) #When finishing stop operations, enable buttons
 
         # UI state indicators
         self.p_maka.stateChanged.connect(lambda state: self.update_status_label(self.maka_status_lbl, state))
@@ -256,18 +304,35 @@ class HerdDaqWindow(QMainWindow):
         # Crash monitoring
         self.p_maka.finished.connect(lambda exit_code, exit_status: self.handle_process_crash("MAKA", exit_status))
         self.p_oca.finished.connect(lambda exit_code, exit_status: self.handle_process_crash("OCA", exit_status))
+        
+        self.p_maka.errorOccurred.connect(self.on_maka_error)
+        self.p_oca.errorOccurred.connect(self.on_oca_error)
 
     def start_daemons_sequence(self):
         """Initiates daemon execution starting with MAKA."""
         print("[INFO] Inizio sequenza di avvio asincrona: Lancio MAKA...")
         
-        self.p_maka.start("./exe/MAKA", ["5555", "2"]) 
+        self.p_maka.start(f"{self.EXE_FOLDER}/MAKA", ["5555", "2"]) 
 
     def start_oca_daemon(self):
         """Triggers OCA daemon once MAKA is confirmed RUNNING."""
         print("[INFO] MAKA avviato con successo. Lancio di OCA in cascata...")
         
-        self.p_oca.start("./exe/OCA", ["-v", "1"])
+        self.p_oca.start(f"{self.EXE_FOLDER}/OCA", ["-v", "1"])
+        
+    def on_startup_completed(self, exit_code, exit_status):
+        if exit_code == 0:
+            print("[SUCCESS] Startup completato")
+            self.set_ui_interlocked(True)
+        else:
+            print(f"[ERROR] STARTOCA fallito (exit={exit_code})")
+    
+    def on_stop_completed(self, exit_code, exit_status):
+        if exit_code == 0:
+            print("[SUCCESS] Stop completato")
+            self.set_ui_interlocked(False)
+        else:
+            print(f"[ERROR] STOPOCA fallito (exit={exit_code})")
 
     def update_status_label(self, label: QLabel, state: QProcess.ProcessState):
         """Updates status badge style and text based on QProcess state."""
@@ -310,12 +375,22 @@ class HerdDaqWindow(QMainWindow):
         """Handles START sequence: locking UI, saving configs, launching processes."""
         # Reset crash monitoring state for new execution cycle
         self.intentional_stop = False
-        self.set_ui_interlocked(locked=True)
+        #self.set_ui_interlocked(locked=True)
         
         if not self.oca_ip_input.text():
             print("[WARNING] Indirizzo IP OCA non inserito!")
             
         self.dump_ui_to_files()
+        
+        # Check MAKA and OCA executables
+        MakaExe = Path(f"{self.EXE_FOLDER}/MAKA").resolve()
+        OcaExe = Path(f"{self.EXE_FOLDER}/OCA").resolve()
+
+        if not((MakaExe.exists() and MakaExe.is_file())):
+            print(f"Missing {MakaExe}")
+        if not((OcaExe.exists() and OcaExe.is_file())):
+            print(f"Missing {OcaExe}")
+            
         self.start_daemons_sequence()
         
     def on_oca_started(self):
@@ -324,9 +399,8 @@ class HerdDaqWindow(QMainWindow):
         run_arg = "0" if run_type == "CAL" else "1"
         
         print(f"[INFO] Demoni attivi. Lancio STARTOCA per run di tipo {run_type} {run_arg}")
-        self.p_startoca = QProcess(self)
         self.p_startoca.setWorkingDirectory(str(config_parser.ROOT_DIR))
-        self.p_startoca.start("./exe/STARTOCA", [run_arg])
+        self.p_startoca.start(f"{self.EXE_FOLDER}/STARTOCA", [run_arg])
 
     def on_stop_clicked(self):
         """Handles STOP sequence: executing STOPOCA and terminating daemons."""
@@ -337,7 +411,7 @@ class HerdDaqWindow(QMainWindow):
         
         self.p_stopoca = QProcess(self)
         self.p_stopoca.setWorkingDirectory(str(config_parser.ROOT_DIR))
-        self.p_stopoca.start("./exe/STOPOCA")
+        self.p_stopoca.start(f"{self.EXE_FOLDER}/STOPOCA")
         
         self.p_oca.terminate()
         self.p_maka.terminate()
@@ -362,6 +436,12 @@ class HerdDaqWindow(QMainWindow):
                 f"Il demone {process_name} si è interrotto in modo anomalo!\nIl sistema verrà messo in sicurezza (STOP)."
             )  
             self.on_stop_clicked()
+            
+    def on_maka_error(self, error):
+        QMessageBox.critical(self, "Errore MAKA", self.p_maka.errorString())
+    
+    def on_oca_error(self, error):
+        QMessageBox.critical(self, "Errore OCA", self.p_oca.errorString())
 
     def closeEvent(self, event: QCloseEvent):
         """Ensures clean process termination upon window closure."""
