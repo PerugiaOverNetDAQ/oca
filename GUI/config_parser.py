@@ -90,18 +90,18 @@ def save_oca_config(data, filepath=DEFAULT_OCA_PATH):
         # GUI-managed fields
         "oca_ip": str(current_data.get("oca_ip", "")),
         "maka_dir": str(current_data.get("maka_dir", "")),
-        "write_file": str(current_data.get("write_file", False)),
-        "send_om": str(current_data.get("send_om", False)),
+        "write_file": str(int(current_data.get("write_file", False))),
+        "send_om": str(int(current_data.get("send_om", False))),
         "om_prescaler": str(current_data.get("om_prescaler", 0)),
 
         # C++ Backend extra fields
-        "listenClient": str(current_data.get("listenClient", False)),
+        "listenClient": str(int(current_data.get("listenClient", False))),
         "portClient": str(current_data.get("portClient", 0)),
         "clientCmdLen": str(current_data.get("clientCmdLen", 0)),
         "makaPort": str(current_data.get("makaPort", 0)),
         "makaCmdLen": str(current_data.get("makaCmdLen", 0)),
-        "calMode": str(current_data.get("calMode", False)),
-        "intTrigEn": str(current_data.get("intTrigEn", False))
+        "calMode": str(int(current_data.get("calMode", False))),
+        "intTrigEn": str(int(current_data.get("intTrigEn", False)))
     }
     
     with open(filepath, "w") as configfile:
@@ -191,11 +191,11 @@ def save_papero_config(data_list, filepath=DEFAULT_PAPERO_PATH):
         section_name = f"PAPERO_{i+1}"
         config[section_name] = {
             # GUI-managed fields
-            "enable": str(current_data.get("enable", False)),
+            "enable": str(int(current_data.get("enable", False))),
             "ip": str(current_data.get("ip", "")),
-            "send_maka": str(current_data.get("send_maka", False)),
+            "send_maka": str(int(current_data.get("send_maka", False))),
             "trigger": str(current_data.get("trigger", 0)),
-            "test_mode": str(current_data.get("test_mode", False)),
+            "test_mode": str(int(current_data.get("test_mode", False))),
             "test_channel": str(current_data.get("test_channel", 0)),
             "bias0": str(current_data.get("bias0", 0.0)),
             "bias1": str(current_data.get("bias1", 0.0)),
@@ -205,18 +205,18 @@ def save_papero_config(data_list, filepath=DEFAULT_PAPERO_PATH):
             "tcpPort": str(current_data.get("tcpPort", 0)),
             "cmdLen": str(current_data.get("cmdLen", 0)),
             "testUnitCfg": str(current_data.get("testUnitCfg", 0)),
-            "hkEn": str(current_data.get("hkEn", False)),
-            "dataEn": str(current_data.get("dataEn", False)),
+            "hkEn": str(int(current_data.get("hkEn", False))),
+            "dataEn": str(int(current_data.get("dataEn", False))),
             "pktLen": str(current_data.get("pktLen", 0)),
             "feClkDiv": str(current_data.get("feClkDiv", 0)),
             "feClkDuty": str(current_data.get("feClkDuty", 0)),
             "adcClkDiv": str(current_data.get("adcClkDiv", 0)),
             "adcClkDuty": str(current_data.get("adcClkDuty", 0)),
             "trig2Hold": str(current_data.get("trig2Hold", 0)),
-            "adcFast": str(current_data.get("adcFast", False)),
+            "adcFast": str(int(current_data.get("adcFast", False))),
             "busyLen": str(current_data.get("busyLen", 0)),
             "adcDelay": str(current_data.get("adcDelay", 0)),
-            "ideTest": str(current_data.get("ideTest", False))
+            "ideTest": str(int(current_data.get("ideTest", False)))
         }
         
     with open(filepath, "w") as configfile:

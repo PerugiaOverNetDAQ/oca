@@ -307,6 +307,10 @@ class HerdDaqWindow(QMainWindow):
         self.write_file_cb.setChecked(oca_data["write_file"])
         self.send_om_cb.setChecked(oca_data["send_om"])
         self.om_prescaler_sb.setValue(oca_data["om_prescaler"])
+        if oca_data.get("calMode", False):
+            self.run_type_combo.setCurrentText("CAL")
+        else:
+            self.run_type_combo.setCurrentText("BEAM")
         
         papero_data_list = config_parser.load_papero_config()
         for i, row in enumerate(self.papero_rows):
@@ -330,7 +334,8 @@ class HerdDaqWindow(QMainWindow):
             "maka_dir": self.maka_dir_input.text(),
             "write_file": self.write_file_cb.isChecked(),
             "send_om": self.send_om_cb.isChecked(),
-            "om_prescaler": int(self.om_prescaler_sb.value())
+            "om_prescaler": int(self.om_prescaler_sb.value()),
+            "calMode": self.run_type_combo.currentText() == "CAL"
         }
         config_parser.save_oca_config(oca_data)
         
