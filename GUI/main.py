@@ -42,14 +42,6 @@ class HerdDaqWindow(QMainWindow):
 
         right_widget.setMinimumWidth(700)
         
-        # Splitter line color
-        #splitter.setStyleSheet("""
-        #    QSplitter::handle {
-        #        background-color: #666666;
-        #        width: 6px;
-        #    }
-        #""")
-        
         # UI Setup
         self.init_global_settings(left_layout)
         self.init_papero_grid(left_layout)
@@ -274,17 +266,6 @@ class HerdDaqWindow(QMainWindow):
 
     # Terminal style
     def apply_terminal_style(self, widget):
-        # Ubuntu-like
-        #widget.setStyleSheet("""
-        #    QTextEdit {
-        #        background-color: #300A24;
-        #        color: #FFFFFF;
-        #        border: 1px solid #555555;
-        #        font-family: 'Ubuntu Mono';
-        #        font-size: 10pt;
-        #        selection-background-color: #4E9A06;
-        #    }
-        #""")
         widget.setStyleSheet("""
             QTextEdit {
                 background-color: #000000;
@@ -373,10 +354,10 @@ class HerdDaqWindow(QMainWindow):
 
         # See MAKA/OCA errors on dedicated windows
         self.p_maka.errorOccurred.connect(
-            lambda err: self.log_maka(f"[ERROR] {err} - {self.p_maka.errorString()}")
+            lambda err: self.log_maka(f"[ERROR] {err} - {self.p_maka.errorString()}") if not self.intentional_stop else None
         )
         self.p_oca.errorOccurred.connect(
-            lambda err: self.log_oca(f"[ERROR] {err} - {self.p_oca.errorString()}")
+            lambda err: self.log_oca(f"[ERROR] {err} - {self.p_oca.errorString()}") if not self.intentional_stop else None
         )
         
         # See MAKA/OCA stdout prints on dedicated windows
@@ -504,6 +485,11 @@ class HerdDaqWindow(QMainWindow):
         """Handles START sequence: locking UI, saving configs, launching processes."""
         # Reset crash monitoring state for new execution cycle
         self.intentional_stop = False
+
+        # Separator to space out old logs
+        self.log_python("\n--- AVVIO NUOVA RUN ---")
+        self.log_maka("\n--- AVVIO NUOVA RUN ---")
+        self.log_oca("\n--- AVVIO NUOVA RUN ---")
         
         if not self.oca_ip_input.text():
             self.log_python("[WARNING] Indirizzo IP OCA non inserito!")
@@ -566,10 +552,12 @@ class HerdDaqWindow(QMainWindow):
             self.on_stop_clicked()
             
     def on_maka_error(self, error):
-        QMessageBox.critical(self, "Errore MAKA", self.p_maka.errorString())
+        if not self.intentional_stop:
+            QMessageBox.critical(self, "Errore MAKA", self.p_maka.errorString())
     
     def on_oca_error(self, error):
-        QMessageBox.critical(self, "Errore OCA", self.p_oca.errorString())
+        if not self.intentional_stop:
+            QMessageBox.critical(self, "Errore OCA", self.p_oca.errorString())
 
     def closeEvent(self, event: QCloseEvent):
         """Ensures clean process termination upon window closure."""
