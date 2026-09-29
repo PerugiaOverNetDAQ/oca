@@ -483,6 +483,10 @@ class HerdDaqWindow(QMainWindow):
 
     def on_start_clicked(self):
         """Handles START sequence: locking UI, saving configs, launching processes."""
+        # Locks the interface
+        self.set_ui_interlocked(True)
+        QApplication.processEvents()
+
         # Reset crash monitoring state for new execution cycle
         self.intentional_stop = False
 
@@ -531,6 +535,9 @@ class HerdDaqWindow(QMainWindow):
         
         self.p_oca.terminate()
         self.p_maka.terminate()
+
+        # Unlocks the interface
+        self.set_ui_interlocked(False)
 
 
     # =========================================================================
