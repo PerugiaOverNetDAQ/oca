@@ -11,6 +11,7 @@ from pathlib import Path
 from time import sleep
 
 import config_parser
+from online_monitor import EventViewer
 
 class HerdDaqWindow(QMainWindow):
     def __init__(self):
@@ -57,6 +58,8 @@ class HerdDaqWindow(QMainWindow):
         self.intentional_stop = False
         
         self.EXE_FOLDER="./exe/" #Always start from config_parser.ROOT_DIR
+
+        self.online_monitor_win = None
 
 
     # =========================================================================
@@ -190,10 +193,16 @@ class HerdDaqWindow(QMainWindow):
         self.stop_btn.setMinimumWidth(100)
         
         self.start_btn.clicked.connect(self.on_start_clicked)
+
+        self.monitor_btn = QPushButton("ONLINE MONITOR")
+        self.monitor_btn.setMinimumWidth(130)
+        self.monitor_btn.setStyleSheet("font-weight: bold; background-color: #2ecc71; color: white;")
+        self.monitor_btn.clicked.connect(self.open_online_monitor)
         
         layout.addWidget(self.start_btn)
         layout.addWidget(self.stop_btn)
-        
+        layout.addWidget(self.monitor_btn)
+
         parent_layout.addWidget(group_box)
     
     def init_log_panels(self, parent_layout):    
@@ -276,6 +285,7 @@ class HerdDaqWindow(QMainWindow):
                 selection-background-color: #4E9A06;
             }
         """)
+
 
     # ==========================================
     # GUI CONNECTION LOGIC <-> PARSER
@@ -541,6 +551,19 @@ class HerdDaqWindow(QMainWindow):
 
 
     # =========================================================================
+    # ONLINE MONITOR
+    # =========================================================================
+    def open_online_monitor(self):
+        """Opens the Online Monitor Event Viewer window."""
+        if self.online_monitor_win is None or not self.online_monitor_win.isVisible():
+            self.online_monitor_win = EventViewer(self)
+            self.online_monitor_win.show()
+        else:
+            self.online_monitor_win.raise_()
+            self.online_monitor_win.activateWindow()
+
+
+    # =========================================================================
     # CRASH HANDLING & CLEAN SHUTDOWN
     # =========================================================================
     def handle_process_crash(self, process_name, exit_status):
@@ -570,6 +593,9 @@ class HerdDaqWindow(QMainWindow):
         """Ensures clean process termination upon window closure."""
         self.log_python("[INFO] Richiesta di chiusura GUI. Pulizia processi in corso...")
 
+        if self.online_monitor_win is not None:
+            self.online_monitor_win.close()
+
         self.intentional_stop = True
         
         if self.p_maka.state() != QProcess.ProcessState.NotRunning:
@@ -579,7 +605,7 @@ class HerdDaqWindow(QMainWindow):
             
         self.log_python("[SUCCESS] Processi terminati.")
         event.accept() 
-    
+
 
 
 if __name__ == "__main__":
