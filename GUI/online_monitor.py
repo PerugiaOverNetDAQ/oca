@@ -29,26 +29,26 @@ QUADDER_END   = 0x0bedface  # QUADDER data end identifier
 def reorder(v):
     """Reorder ADC channels from multiplexer to match physical GPIO connector layout."""
     # Safety check on the length of the input vector
-    if len(v) != 1792:
-        print(f"ERROR: reorder() expects 1792 elements, got {len(v)}")
-        return [0] * 1792
+    if len(v) != 1280:
+        print(f"ERROR: reorder() expects 1280 elements, got {len(v)}")
+        return [0] * 1280
     
-    reordered = [0] * 1792
+    reordered = [0] * 1280
     j = 0
     # Sequential mapping of hardware ADCs
-    order = [12, 13, 10, 11, 8, 9, 6, 7, 4, 5, 2, 3, 0, 1]
+    order = [8, 9, 6, 7, 4, 5, 2, 3, 0, 1]
 
     # Reconstruction of the logical sequence of channels
     for ch in range(128):
         for adc in order:
-            write_idx = (adc * 128 + ch) % 1792
+            write_idx = (adc * 128 + ch) % 1280
             reordered[write_idx] = v[j]
             j += 1
 
-    # Swap channels 0-895 and 896-1791 to match physical GPIO connector layout    
-    temp = reordered[0:896]
-    reordered[0:896] = reordered[896:1792]
-    reordered[896:1792] = temp
+    # Swap channels 0-639 and 640-1280 to match physical GPIO connector layout    
+    temp = reordered[0:640]
+    reordered[0:640] = reordered[640:1280]
+    reordered[640:1280] = temp
 
     return reordered
 
@@ -139,15 +139,15 @@ class EventViewer(QMainWindow):
         self.ax = self.figure.add_subplot(111)
         
         self.ax.set_title("Online Monitor (QUADDER 0)")
-        self.ax.set_xlabel("Canale ADC (0 - 1791)")
+        self.ax.set_xlabel("Canale ADC (0 - 1279)")
         self.ax.set_ylabel("Valore ADC")
-        self.ax.set_xlim(0, 1792)
+        self.ax.set_xlim(0, 1280)
         self.ax.set_ylim(0, 4096)
         self.ax.grid(True, linestyle="--", alpha=0.5)
         
         # Initialize flat plot line
         self.line, = self.ax.plot(
-            np.zeros(1792),
+            np.zeros(1280),
             color="#2980b9",
             linestyle="None",
             marker="o",
@@ -273,7 +273,7 @@ class EventViewer(QMainWindow):
                     if len(quadder_words) >= 10:
                         # Decoding, channel reordering, and conversion to NumPy array
                         channels = reorder(decode_quadder(quadder_words[10:]))
-                        ch = np.array(channels[:1792], dtype=np.int32)
+                        ch = np.array(channels[:1280], dtype=np.int32)
 
                         self.udp_event_id += 1
                         # Sending processed data to the GUI thread via a Qt signal
