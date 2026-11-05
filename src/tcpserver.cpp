@@ -1,86 +1,140 @@
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <arpa/inet.h>
-
-#include "tcpserver.h"
+/*!
+  @file tcpServer.cpp
+  @brief TCP server management, tx, and rx function definitions
+  @author Niccolò De Paolis (niccolo.depaolis@studenti.unipg.it)
+  @author Mattia Barbanera (mattia.barbanera@infn.it)
+  @author Matteo Duranti (matteo.duranti@infn.it)
+*/
+#include "tcpServer.h"
 #include "utility.h"
 
-tcpserver::tcpserver(int port, int verb){
-
-  kVerbosity=verb;
-  kListeningOn=true;
-
-  cmdlenght = 8;
+tcpServer::tcpServer(int port, int verb){
+  kVerbosity            = verb;
+  kListeningOn          = false;
+  kTcpConn              = -1;
+  kSockDesc             = -1;
+  kPort                 = port;
+  kBlocking             = false;
   
-  kSocket = -1;
+  //Reset kAddr to intended values
+  memset(&kAddr, 0, sizeof(kAddr));
+  kAddr.sin_family      = AF_INET;
+  kAddr.sin_port        = htons(kPort);
+  kAddr.sin_addr.s_addr = INADDR_ANY;
   
-  struct sockaddr_in server_addr;
+}
 
-  kSock = socket(AF_INET , SOCK_STREAM , 0);
-  exit_if(kSock<0, "%s) Socket creation error:", __METHOD_NAME__);
+tcpServer::~tcpServer(){
+  if (kVerbosity>0) {
+    printf("%s) Destroying tcpServer\n", __METHOD_NAME__);
+  }
+  kListeningOn = false;
+  close(kSockDesc);
+  shutdown(kTcpConn, SHUT_RDWR);
+  
+  return;
+}
 
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_port = htons(port);
-  server_addr.sin_addr.s_addr = INADDR_ANY;
+void tcpServer::Setup(){
+  int optval = 1;
+  unsigned int buff_size = 16700000;
+  socklen_t optLen = sizeof(optval);
 
-  int n = 1;
-  if (setsockopt(kSock, SOL_SOCKET, SO_REUSEADDR, &n, sizeof(int)) == -1) {
-    perror("setsockopt");
+  exit_if(kListeningOn == true, "%s) Socket already setup", __METHOD_NAME__);
+
+  //Create a new socket
+  printf("TCP/IP socket: Opening... ");
+  kSockDesc = socket(AF_INET , SOCK_STREAM , 0);
+  exit_if(kSockDesc < 0, "%s) Socket creation error", __METHOD_NAME__);
+
+  //Set socket options
+  //SO_REUSEADDR to avoid waiting for addresses already in use
+  if (setsockopt(kSockDesc, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &optval,
+                  optLen) == -1) {
+    perror("setsockopt failed...\n");
     exit(1);
   }
-  
-  int retbind = bind(kSock, (struct sockaddr *) &server_addr , sizeof(server_addr));
-  exit_if(retbind<0, "%s) Bind error:", __METHOD_NAME__);
-
-  if (kVerbosity>0) {
-    printf("%s) correct bind...\n", __METHOD_NAME__);
+  //Set SO_RCVBUF to maximum allowed
+  buff_size = 16700000;
+  if (setsockopt(kSockDesc, SOL_SOCKET, SO_RCVBUF, &buff_size,
+                  optLen) == -1) {
+    perror("setsockopt failed...\n");
+    exit(1);
   }
+  //Set SO_SNDBUF to maximum allowed
+  buff_size = 16700000;
+  if (setsockopt(kSockDesc, SOL_SOCKET, SO_SNDBUF, &buff_size,
+                  optLen) == -1) {
+    perror("setsockopt failed...\n");
+    exit(1);
+  }
+  printf("ok\n");
+
+  buff_size = 0;
+  getsockopt(kSockDesc, SOL_SOCKET, SO_RCVBUF, &buff_size, &optLen);
+  printf("%s) SO_RCVBUF: %u\n", __METHOD_NAME__, buff_size);
+
+  buff_size = 0;
+  getsockopt(kSockDesc, SOL_SOCKET, SO_SNDBUF, &buff_size, &optLen);
+  printf("%s) SO_SNDBUF: %u\n", __METHOD_NAME__, buff_size);
+  
+  //Binding to port and address
+  printf("TCP/IP socket: binding... ");
+  int result = bind(kSockDesc, (struct sockaddr *) &kAddr,
+                  sizeof(kAddr));
+  exit_if(result < 0, "%s) Bind error", __METHOD_NAME__);
+  printf("ok\n");
   fflush(stdout);
 
-  //  int retlisten=listen(kSock, 1);//Nicolo'
-  int retlisten=listen(kSock, 100);//Matteo D.
-  exit_if(retlisten<0, "%s) Listening not possibile:", __METHOD_NAME__);
+  //Listen for new connections
+  printf("TCP/IP socket: listening... ");
+  result = listen(kSockDesc, 100);
+  exit_if(result < 0, "%s) Listening not possibile", __METHOD_NAME__);
+  printf("ok\n");
 
-  AcceptConnection();
+  kListeningOn = true;
 
   return;
 }
 
-void tcpserver::AcceptConnection(){
-  
-  if (kSocket!=-1) {
-    shutdown(kSocket, SHUT_RDWR);
-    kSocket = -1;
-  }
-  
-  struct sockaddr_in client_addr;
+void tcpServer::AcceptConnection(){
+  struct sockaddr_in clientAddr;
+  socklen_t addrLen = sizeof(clientAddr);
+  int flags, retflags;
 
-  //------------ make the read(socket) non-blocking ---------
-  // first line needed to save current flags, if any
-  {
-    int flags=fcntl(kSock ,F_GETFL, 0);
+  sockaddr_in peerAddr;
+  socklen_t peerAddrLen = sizeof(peerAddr);
+
+  //Close open connections, if any
+  if (kTcpConn!=-1) {
+    shutdown(kTcpConn, SHUT_RDWR);
+    kTcpConn = -1;
+  }
+
+  if (!kBlocking) {
+    //Save the current flags, if any
+    flags = fcntl(kSockDesc ,F_GETFL, 0);
     exit_if(flags < 0, "%s) Fcntl failed:", __METHOD_NAME__);
-    int retflags=fcntl(kSock, F_SETFL, flags | O_NONBLOCK);
+    //Make the socket non-blocking
+    retflags=fcntl(kSockDesc, F_SETFL, flags | O_NONBLOCK);
     exit_if(retflags < 0, "%s) Fcntl failed:", __METHOD_NAME__);
   }
-  //--------------------------------------------------------
 
-  while (kSocket==-1) {
+  //Stop here until a connection exists
+  while (kTcpConn==-1) {
     
-    int addrlen = sizeof(client_addr);
     if (kVerbosity>1) {
-      printf("%s) waiting for connections...\n", __METHOD_NAME__);
-    }
-    //  kSocket = accept(kSock, (struct sockaddr *) &client_addr, (socklen_t *) &addrlen);
-    kSocket = accept(kSock, (struct sockaddr *) &client_addr, (socklen_t *) &addrlen);
-    if (kVerbosity>1) {
-      printf("%s) kSocket: %d, errno: %d (EAGAIN, EWOULDBLOCK: %d %d)\n", __METHOD_NAME__, kSocket, errno, EAGAIN, EWOULDBLOCK);
+      printf("%s) Waiting for connections...\n", __METHOD_NAME__);
     }
     
+    //Await (blocking) or try (non-blocking) connections
+    kTcpConn = accept(kSockDesc, (struct sockaddr *) &clientAddr, &addrLen);
+    if (kVerbosity>1) {
+      printf("%s) kTcpConn: %d, errno: %d (EAGAIN, EWOULDBLOCK: %d %d)\n",
+                __METHOD_NAME__, kTcpConn, errno, EAGAIN, EWOULDBLOCK);
+    }
+    
+    //Return if server is closing
     if (kVerbosity>2) {
       printf("%s) %d\n", __METHOD_NAME__, kListeningOn);
     }
@@ -88,119 +142,111 @@ void tcpserver::AcceptConnection(){
       return;
     }
     
+    //If known errors occur, retry; otherwise, exit
     if (errno == EAGAIN || errno == EWOULDBLOCK){
       usleep(100);
       continue;
     } else {
-      exit_if(kSocket<0, "%s) Negotiation error:", __METHOD_NAME__);
+      exit_if(kTcpConn<0, "%s) Negotiation error:", __METHOD_NAME__);
     }
-      
+    
+    //Setting up of the connections, not in a rush
     sleep(1);
   }
   
-  //------------ make the read(socket) non-blocking ---------
-  // first line needed to save current flags, if any
-  {
-    int flags=fcntl(kSocket ,F_GETFL, 0);
+  //FIXME Return to blocking socket?
+  if (!kBlocking) {
+    //Update the connection flags to make it non-blocking
+    flags=fcntl(kTcpConn ,F_GETFL, 0);
     exit_if(flags < 0, "%s) Fcntl failed:", __METHOD_NAME__);
-    int retflags=fcntl(kSocket, F_SETFL, flags | O_NONBLOCK);
+    retflags=fcntl(kTcpConn, F_SETFL, flags | O_NONBLOCK);
     exit_if(retflags < 0, "%s) Fcntl failed:", __METHOD_NAME__);
   }
-  //--------------------------------------------------------
   
-  sockaddr_in peer;
-  socklen_t alen = sizeof(peer);
-  getpeername(kSocket, (sockaddr *) &peer, &alen);
-
-  printf("%s) connection succeded: (socket number %d, %s:%d)\n", __METHOD_NAME__, kSocket, inet_ntoa(peer.sin_addr), ntohs(peer.sin_port));
-
-  return;
-}
-
-tcpserver::~tcpserver(){
-  
-  if (kVerbosity>0) {
-    printf("%s) destroying tcpserver\n", __METHOD_NAME__);
-  }
-  close(kSock);
-  shutdown(kSocket, SHUT_RDWR);
-  
-  return;
-}
-
-void tcpserver::ListenCmd(){
-
-  kListeningOn=true;
-
-  while (kListeningOn){
-    // printf("%d\n", kListeningOn);
-
-    char msg[LEN];
-
-    //    ssize_t readret = read(kSocket, msg, sizeof(msg));
-    ssize_t readret = read(kSocket, msg, ((cmdlenght*8)*sizeof(char)+1));//we need to read N char, so N bytes. N is ((cmdLenght*8)*sizeof(char)+1) since we ship cmdLenght numbers (each one in ASCII char), so cmdLenght*8*sizeof(char) + 1 termination char
-    //  printf("readret = %ld\n", readret);
-
-    if (readret < 0){
-      if (EAGAIN == errno || EWOULDBLOCK == errno) {
-	if (kVerbosity>1) {
-	  printf("%s) there's nothing to read now; try again later\n", __METHOD_NAME__);
-	}
-      }
-      else {
-	print_error("%s) Read error: \n", __METHOD_NAME__);
-      }
-    }
-    else if (readret==0){
-      //the stream is over (i.e. client disconnected): let's wait for another connection
-      AcceptConnection();
-    }
-    else {
-      ProcessCmdReceived(msg);
-    }
-
-    bzero(msg, sizeof(msg));
-  }
-
-  if (kVerbosity>0) {
-    printf("%s) Stop Listening\n", __METHOD_NAME__);
-  }
+  //
+  getpeername(kTcpConn, (sockaddr *) &peerAddr, &peerAddrLen);
+  printf("%s) Connection succeded: (socket number %d, %s:%d)\n", 
+            __METHOD_NAME__, kTcpConn, inet_ntoa(peerAddr.sin_addr),
+            ntohs(peerAddr.sin_port));
 
   return;
 }
 
-void tcpserver::ProcessCmdReceived(char* msg){
-  //this method does essentially nothing but printing (if kVerbosity set) the message received from the client
-
-  if (kVerbosity>0) {
-    printf("%s) %s\n", __METHOD_NAME__, msg);
-  }
-
-  // if (msg == quit) {
-  //  StopListening();
-  
-  return;
-}
-
-void tcpserver::StopListening(){
-
-  kListeningOn=false;
+void tcpServer::SockStart(){
+  Setup();
+  AcceptConnection();
 
   return;
 }
 
-int tcpserver::ReplyToCmd(char* msg) {
+void tcpServer::StopListening(){
+  kListeningOn = false;
+  return;
+}
 
+void tcpServer::StartListening(){
+  kListeningOn = true;
+  return;
+}
+
+int tcpServer::Tx(const void* msg, uint32_t len){
   int n;
-  n = write(kSocket, msg, cmdlenght);
-  if (n < 0){
-    fprintf(stderr, "%s) Error in writing to the socket\n", __METHOD_NAME__);
-    return 1;
+  n = write(kTcpConn, msg, len);
+  if(n < 0){
+    fprintf(stderr, "Error in writing to the socket\n");
+    std::error_code ec (errno, std::generic_category());
+    std::cout << "Error: " << ec.value() << ", Message: " << ec.message() << '\n';
+    //exit(1);
+    return n;
   }
-  
-  if (kVerbosity>1) {
-    printf("%s) Sent %d bytes\n", __METHOD_NAME__, n);
+  if (kVerbosity > 3) printf("%s) Sent %d bytes\n", __METHOD_NAME__, n);
+  return n;
+}
+
+int tcpServer::Rx(void* msg, uint32_t len){
+  int n;
+  n = read(kTcpConn, msg, len);
+  if (n < 0) {
+    fprintf(stderr, "Error in reading the socket\n");
+    std::error_code ec (errno, std::generic_category());
+    std::cout << "Error: " << ec.value() << ", Message: " << ec.message() << '\n';
   }
-  
-  return 0;
+  return n;
+}
+
+int tcpServer::RxTimeout(void* msg, uint32_t len, int timeout){
+  if (timeout <= 0) {
+    return Rx(msg, len);
+  }
+
+  if (waitForReadEvent(timeout) == true) {
+    return Rx(msg, len);
+  } else {
+    //return read(kTcpConn, msg, len);
+    return -2;
+  }
+}
+
+bool tcpServer::waitForReadEvent(int timeout){
+  fd_set readSet;
+  struct timeval waitTime;
+  waitTime.tv_sec  = static_cast<int>(timeout/1000);
+  waitTime.tv_usec = static_cast<int>((timeout%1000)*1000);
+
+  //Initialize readSet and add the listening socket to the set readSet
+  FD_ZERO(&readSet); //FIXME if kTcpConn already in the list, FD_SET returns no error
+  FD_SET(kTcpConn, &readSet);
+	
+  //Wait the socket to be readable
+  //pselect for signal capture; poll/ppoll are an upgrade
+	int retSel = select(kTcpConn+1, &readSet, NULL, NULL, &waitTime);
+	if(retSel > 0) {
+	  return true;
+	} else if(retSel < 0) {
+	  printf("%s) Select returned negative value: %d\n", __METHOD_NAME__, retSel);
+	} else {
+    printf("%s) Timeout\n", __METHOD_NAME__);
+	}
+	
+  return false;
 }

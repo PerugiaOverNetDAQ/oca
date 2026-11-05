@@ -53,11 +53,12 @@ ifdef ROOTSYS
 endif
 INCLUDEARM += $(INCLUDE)
 
-CFLAGS := -Wall -Wextra -pthread #-fsanitize=address
-LDFLAGS := -Wall -Wextra -pthread #-fsanitize=address
+DEBUGFLAGS := #-g -fsanitize=address -fstack-protector
+CFLAGS := -Wall -Wextra -pthread -std=c++11 $(DEBUGFLAGS)
+LDFLAGS := -Wall -Wextra -pthread $(DEBUGFLAGS)
 
-CPPFLAGS := $(CFLAGS) -std=c++11 $(INCLUDE)
-CFLAGSARM := $(CFLAGS) -std=c++11 $(INCLUDEARM) -I$(HWLIBS_ROOT)/include -I$(HWLIBS_ROOT)/include/$(ALT_DEVICE_FAMILY) -D$(ALT_DEVICE_FAMILY)
+CPPFLAGS := $(CFLAGS) $(INCLUDE) 
+CFLAGSARM := $(CFLAGS) $(INCLUDEARM) -I$(HWLIBS_ROOT)/include -I$(HWLIBS_ROOT)/include/$(ALT_DEVICE_FAMILY) -D$(ALT_DEVICE_FAMILY)
 
 OCAOPTFLAG := -g
 HPSOPTFLAG := -g
@@ -65,12 +66,15 @@ HPSOPTFLAG := -g
 # HPSOPTFLAG := -O2
 
 # Objects and sources:
-OBJECTS=$(OBJ)/main.o $(OBJ)/de10_silicon_base.o $(OBJ)/tcpclient.o $(OBJ)/daqserver.o $(OBJ)/tcpserver.o $(OBJ)/utility.o
+OBJECTS=$(OBJ)/main.o $(OBJ)/de10_silicon_base.o $(OBJ)/tcpclient.o $(OBJ)/daqserver.o $(OBJ)/tcpServer.o $(OBJ)/utility.o $(OBJ)/daqConfig.o $(OBJ)/paperoConfig.o $(OBJ)/anyoption.o $(OBJ)/makaClient.o $(OBJ)/udpSocket.o
+
+OBJECTSTEST=$(OBJ)/maintest.o $(OBJ)/daqclient.o $(OBJ)/tcpclient.o $(OBJ)/utility.o
 OBJECTSSTART=$(OBJ)/mainstart.o $(OBJ)/daqclient.o $(OBJ)/tcpclient.o $(OBJ)/utility.o
 OBJECTSSTOP=$(OBJ)/mainstop.o $(OBJ)/daqclient.o $(OBJ)/tcpclient.o $(OBJ)/utility.o
-OBJECTSTEST=$(OBJ)/maintest.o $(OBJ)/daqclient.o $(OBJ)/tcpclient.o $(OBJ)/utility.o
 
-OBJECTSHPS := $(OBJARM)/server.o $(OBJARM)/server_function.o $(OBJARM)/highlevelDriversFPGA.o $(OBJARM)/lowlevelDriversFPGA.o
+OBJECTSMAKA=$(OBJ)/tcpclient.o $(OBJ)/tcpServer.o $(OBJ)/utility.o $(OBJ)/anyoption.o $(OBJ)/maka.o $(OBJ)/makaMerger.o $(OBJ)/udpSocket.o
+
+OBJECTSHPS := $(OBJARM)/papero.o $(OBJARM)/hpsDataServer.o $(OBJARM)/hpsServer.o $(OBJARM)/tcpServer.o $(OBJARM)/utility.o $(OBJARM)/fpgaDriver.o $(OBJARM)/axiFifo.o
 
 # Executables:
 PAPERO := $(EXE)/PAPERO
@@ -78,15 +82,18 @@ OCADAQ := $(EXE)/OCA
 OCATEST := $(EXE)/testOCA
 OCASTART := $(EXE)/startOCA
 OCASTOP := $(EXE)/stopOCA
+MAKA := $(EXE)/MAKA
 
 # Rules:
-all: clean $(OCADAQ) $(OCATEST) $(PAPERO)
+all: clean $(OCADAQ) $(OCATEST) $(MAKA) $(PAPERO) $(OCASTART) $(OCASTOP) $(PAPERO)
 
-oca: cleanoca $(OCADAQ) $(OCATEST)
+oca: $(OCADAQ) $(OCATEST)
 
-papero: cleanpapero $(PAPERO)
+maka: $(MAKA)
 
 startstop : $(OCASTART) $(OCASTOP)
+
+papero: cleanpapero $(PAPERO)
 
 $(OCADAQ): $(OBJECTS)
 	@echo Linking $^ to $@
@@ -102,19 +109,26 @@ $(OCATEST): $(OBJECTSTEST)
 	$(CXX) $(CPPFLAGS) $^ -o $@ $(ROOTGLIBS)
 	@cp -v $(OCATEST) $(BIN)/
 
+$(MAKA): $(OBJECTSMAKA)
+	@echo Linking $^ to $@
+	@mkdir -pv $(EXE)
+	@mkdir -pv $(BIN)
+	$(CXX) $(CPPFLAGS) $^ -o $@ $(ROOTGLIBS)
+	@cp -v $(MAKA) $(BIN)/
+	
 $(OCASTART): $(OBJECTSSTART)
 	@echo Linking $^ to $@
 	@mkdir -pv $(EXE)
 	@mkdir -pv $(BIN)
 	$(CXX) $(CPPFLAGS) $^ -o $@ $(ROOTGLIBS)
-	@cp -v $(OCASTART) $(BIN)/      
+	@cp -v $(OCASTART) $(BIN)/	
 
 $(OCASTOP): $(OBJECTSSTOP)
 	@echo Linking $^ to $@
 	@mkdir -pv $(EXE)
 	@mkdir -pv $(BIN)
 	$(CXX) $(CPPFLAGS) $^ -o $@ $(ROOTGLIBS)
-	@cp -v $(OCASTOP) $(BIN)/ 
+	@cp -v $(OCASTOP) $(BIN)/	
 
 $(PAPERO): $(OBJECTSHPS)
 ifeq ($(UNAME_S),Darwin)
@@ -139,8 +153,7 @@ $(OBJ)/%.o: $(SRC)/%.cpp
 	@mkdir -pv $(OBJ)
 	$(CXX) $(CPPFLAGS) $(OCAOPTFLAG) $(VERSION_FLAGS) -c -o $@ $<
 
-#Objects
-$(OBJARM)/%.o: $(SRC)/%.c
+$(OBJARM)/%.o: $(SRC)/%.cpp
 ifeq ($(UNAME_S),Darwin)
 	@echo Compilation under MacOs not possibile
 else
@@ -154,6 +167,7 @@ clean:
 	@$(RM) -Rfv $(OBJ)
 	@$(RM) -Rfv $(OCADAQ)
 	@$(RM) -Rfv $(OBJARM)
+	@$(RM) -Rfv $(MAKA)
 	@$(RM) -Rfv $(EXE)
 
 cleanoca:
@@ -161,10 +175,15 @@ cleanoca:
 	@$(RM) -Rfv $(OBJ)
 	@$(RM) -Rfv $(OCADAQ)
 
+cleanmaka:
+	@echo " Cleaning MAKA..."
+	@$(RM) -Rfv $(OBJ)
+	@$(RM) -Rfv $(MAKA)
+
 cleanpapero:
 	@echo " Cleaning PAPERO..."
 	@$(RM) -Rfv $(OBJARM)
 	@$(RM) -Rfv $(PAPERO)
 
 
-.PHONY: clean cleanoca cleanpapero
+.PHONY: clean cleanoca cleanpapero cleanmaka
