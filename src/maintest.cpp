@@ -66,7 +66,7 @@ int main(int argc, char *argv[]) {
   hex2string(readBack,length,command_string);
   printf("%s) Read from DAQ: %s\n", __METHOD_NAME__, command_string);
   
-  sleep(60);
+  sleep(180);
 
   // old format
   // //  const char* stop  ="FF80000800000000EE00000000000000";

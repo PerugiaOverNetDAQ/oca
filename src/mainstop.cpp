@@ -41,6 +41,9 @@ int main(int argc, char *argv[]) {
   //uint32_t stop[4] = {0x080080FF, 0x01001500, 0x000000EE, 0x5B8D6161};
   uint32_t stop[4] = {0x080080FF, 0x01001500, 0x000000EE, tsReord};
   daq->Send((void*)stop, 4*sizeof(uint32_t));
+  uint32_t nEvts = 0;
+  daq->ReceiveInt(nEvts);
+  printf("%s)        Events: %d \n", __METHOD_NAME__, nEvts);
   daq->ReceiveCmdReply(readBack);//is blocking and this is wanted
   hex2string(readBack,length,command_string);
   printf("%s) Read from DAQ: %s\n", __METHOD_NAME__, command_string);

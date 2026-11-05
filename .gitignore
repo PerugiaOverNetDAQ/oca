@@ -55,6 +55,7 @@ Thumbs.db
 obj/
 objarm/
 exe/
+exe*
 build*
 *.user
 bin/
